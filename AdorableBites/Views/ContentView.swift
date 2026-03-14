@@ -2,15 +2,22 @@ import SwiftUI
 import SpriteKit
 
 struct ContentView: View {
-    var body: some View {
-        SpriteView(scene: makeScene())
-            .ignoresSafeArea()
-    }
+    @State private var scene: KitchenScene?
 
-    private func makeScene() -> KitchenScene {
-        let scene = KitchenScene()
-        scene.size = CGSize(width: 1133, height: 744)
-        scene.scaleMode = .aspectFill
-        return scene
+    var body: some View {
+        GeometryReader { geo in
+            if let scene {
+                SpriteView(scene: scene)
+                    .ignoresSafeArea()
+            } else {
+                Color.clear.onAppear {
+                    let s = KitchenScene()
+                    s.size = geo.size
+                    s.scaleMode = .resizeFill
+                    scene = s
+                }
+            }
+        }
+        .ignoresSafeArea()
     }
 }
