@@ -53,6 +53,10 @@ class KitchenScene: SKScene {
     private var scoreNode: ScoreNode!
     private var recipePanel: RecipePanelNode!
 
+    // Quiz
+    private var activeQuiz: QuizNode?
+    private var pendingIngredientNode: IngredientNode?
+
     // Buttons
     private var mixButton: SKShapeNode!
     private var mixLabel: SKLabelNode!
@@ -99,7 +103,6 @@ class KitchenScene: SKScene {
         setupMixButton()
         setupServeButton()
         setupBinButtons()
-        setupDora()
         setupRecipePanel()
     }
 
@@ -120,10 +123,10 @@ class KitchenScene: SKScene {
         let benchHeight = benchTopY - benchBottomY
         let benchCentreY = (benchTopY + benchBottomY) / 2
 
-        let portionHeight = benchHeight / CGFloat(seatCount + 1)
+        let segmentHeight = benchHeight / CGFloat(seatCount)
 
         for i in 0..<seatCount {
-            let seatY = benchTopY - portionHeight * (CGFloat(i) + 1.0)
+            let seatY = benchTopY - segmentHeight * (CGFloat(i) + 0.5)
             let seatPos = CGPoint(x: seatX, y: seatY)
             seatPositions.append(seatPos)
 
@@ -289,17 +292,6 @@ class KitchenScene: SKScene {
         addChild(panBinButton)
     }
 
-    private func setupDora() {
-        let doraTexture = SKTexture(imageNamed: "dora")
-        let dora = SKSpriteNode(texture: doraTexture)
-        let doraHeight: CGFloat = 180
-        let scale = doraHeight / doraTexture.size().height
-        dora.size = CGSize(width: doraTexture.size().width * scale, height: doraHeight)
-        dora.position = CGPoint(x: kitchenCentreX, y: doraHeight / 2 + 10)
-        dora.zPosition = 1
-        addChild(dora)
-    }
-
     private func setupRecipePanel() {
         let panelHeight = size.height - 60
         recipePanel = RecipePanelNode(recipes: KitchenScene.allRecipes, width: 200, height: panelHeight)
@@ -337,6 +329,13 @@ class KitchenScene: SKScene {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         let tappedNodes = nodes(at: location)
+
+        // 0. Active quiz takes priority
+        if let quiz = activeQuiz {
+            if quiz.handleTap(at: location) {
+                return
+            }
+        }
 
         // 1. Bin buttons (always available when visible)
         for node in tappedNodes {
@@ -422,20 +421,36 @@ class KitchenScene: SKScene {
 
     private func handleIngredientTap(_ ingredientNode: IngredientNode) {
         guard gamePhase == .addingIngredients else { return }
+        guard activeQuiz == nil else { return }
         guard customerData.first?.order != nil else { return }
 
         let ingredient = ingredientNode.ingredient
         if mixerNode.currentIngredients.contains(ingredient) { return }
 
-        ingredientNode.animatePop()
-        ingredientNode.animateDimmed()
-        mixerNode.addIngredient(ingredient)
-
-        showMixerBin()
-
-        if mixerNode.canMix {
-            showMixButton()
-        }
+        // Show quiz — ingredient only added on correct answer
+        pendingIngredientNode = ingredientNode
+        let quiz = QuizNode(sceneSize: size)
+        quiz.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        quiz.configure(
+            onCorrect: { [weak self] in
+                guard let self, let node = self.pendingIngredientNode else { return }
+                node.animatePop()
+                node.animateDimmed()
+                self.mixerNode.addIngredient(node.ingredient)
+                self.showMixerBin()
+                if self.mixerNode.canMix {
+                    self.showMixButton()
+                }
+                self.activeQuiz = nil
+                self.pendingIngredientNode = nil
+            },
+            onWrong: { [weak self] in
+                self?.activeQuiz = nil
+                self?.pendingIngredientNode = nil
+            }
+        )
+        addChild(quiz)
+        activeQuiz = quiz
     }
 
     // MARK: - Mixing
