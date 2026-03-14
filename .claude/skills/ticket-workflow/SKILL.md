@@ -31,7 +31,8 @@ Only after the user agrees with the approach:
 
 1. Enter plan mode
 2. Write the plan, exit for approval
-3. On approval, implement the changes
+3. On approval, **create a todo list** from the plan steps using TaskCreate — this lets the user track progress throughout implementation
+4. Implement the changes, updating task status as you go
 
 ### 4. Art assets
 

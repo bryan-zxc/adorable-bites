@@ -46,6 +46,10 @@ class KitchenScene: SKScene {
         Customer(name: "Frog", imageName: "customer_frog", order: pancakeRecipe),
     ]
 
+    // MARK: - Layers
+
+    private var gameLayer: SKNode!
+
     // MARK: - Nodes
 
     private var ingredientShelfNodes: [IngredientNode] = []
@@ -107,6 +111,10 @@ class KitchenScene: SKScene {
     }
 
     private func setupScene() {
+        gameLayer = SKNode()
+        gameLayer.name = "gameLayer"
+        addChild(gameLayer)
+
         setupScoreNode()
         setupBench()
         setupIngredientShelf()
@@ -127,7 +135,7 @@ class KitchenScene: SKScene {
         scoreNode = ScoreNode(width: scoreWidth)
         scoreNode.position = CGPoint(x: (seatLeftEdge + benchRightEdge) / 2, y: size.height - 35)
         scoreNode.zPosition = 2
-        addChild(scoreNode)
+        gameLayer.addChild(scoreNode)
     }
 
     private func setupBench() {
@@ -148,7 +156,7 @@ class KitchenScene: SKScene {
             stool.size = CGSize(width: 55, height: 55)
             stool.position = seatPos
             stool.zPosition = 0
-            addChild(stool)
+            gameLayer.addChild(stool)
         }
 
         let benchTexture = SKTexture(imageNamed: "bench_counter")
@@ -157,7 +165,7 @@ class KitchenScene: SKScene {
         bench.zRotation = .pi / 2
         bench.position = CGPoint(x: benchLeftEdge + self.benchWidth / 2, y: benchCentreY)
         bench.zPosition = -1
-        addChild(bench)
+        gameLayer.addChild(bench)
     }
 
     private func setupIngredientShelf() {
@@ -174,7 +182,7 @@ class KitchenScene: SKScene {
         pantry.size = CGSize(width: pantryWidth, height: pantryHeight)
         pantry.position = CGPoint(x: pantryCentreX, y: shelfY)
         pantry.zPosition = -1
-        addChild(pantry)
+        gameLayer.addChild(pantry)
 
         let compartmentWidth = pantryWidth / ingredientCount
         let pantryLeftEdge = benchRightEdge + pantryPadding
@@ -194,7 +202,7 @@ class KitchenScene: SKScene {
             let node = IngredientNode(ingredient: ingredient, spriteSize: spriteSize, labelOffsetX: labelOffsetX, labelOffsetY: labelOffsetY)
             node.position = CGPoint(x: ingredientX, y: ingredientY)
             node.zPosition = 1
-            addChild(node)
+            gameLayer.addChild(node)
             ingredientShelfNodes.append(node)
         }
     }
@@ -207,14 +215,14 @@ class KitchenScene: SKScene {
         counter.size = CGSize(width: counterWidth, height: counterHeight)
         counter.position = CGPoint(x: kitchenCentreX, y: workstationY)
         counter.zPosition = -1
-        addChild(counter)
+        gameLayer.addChild(counter)
     }
 
     private func setupMixer() {
         mixerNode = MixerNode(size: CGSize(width: 150, height: 150))
         mixerNode.position = CGPoint(x: mixerX, y: workstationY + 10)
         mixerNode.zPosition = 1
-        addChild(mixerNode)
+        gameLayer.addChild(mixerNode)
     }
 
     private func setupPlateStack() {
@@ -227,7 +235,7 @@ class KitchenScene: SKScene {
             plate.size = CGSize(width: plateSize, height: plateSize)
             plate.position = CGPoint(x: plateX, y: workstationY - 20 + CGFloat(i) * stackOffset)
             plate.zPosition = CGFloat(i) + 1
-            addChild(plate)
+            gameLayer.addChild(plate)
             plateSprites.append(plate)
         }
     }
@@ -242,7 +250,7 @@ class KitchenScene: SKScene {
         stoveTop = StoveTopNode(size: CGSize(width: 170, height: 170))
         stoveTop.position = CGPoint(x: stoveX, y: workstationY + 10)
         stoveTop.zPosition = 1
-        addChild(stoveTop)
+        gameLayer.addChild(stoveTop)
     }
 
     private var sinkSize: CGFloat { 130 }
@@ -255,7 +263,7 @@ class KitchenScene: SKScene {
         sink.size = CGSize(width: sinkSize, height: sinkSize)
         sink.position = CGPoint(x: sinkCentreX, y: sinkY)
         sink.zPosition = 0
-        addChild(sink)
+        gameLayer.addChild(sink)
     }
 
     private func setupBinButtons() {
@@ -271,7 +279,7 @@ class KitchenScene: SKScene {
         mixerBinButton.alpha = 0
         mixerBinButton.isHidden = true
         mixerBinButton.zPosition = 3
-        addChild(mixerBinButton)
+        gameLayer.addChild(mixerBinButton)
 
         panBinButton = SKSpriteNode(texture: trashTexture)
         panBinButton.size = CGSize(width: 30, height: 30)
@@ -280,14 +288,14 @@ class KitchenScene: SKScene {
         panBinButton.alpha = 0
         panBinButton.isHidden = true
         panBinButton.zPosition = 3
-        addChild(panBinButton)
+        gameLayer.addChild(panBinButton)
     }
 
     private func setupRecipePanel() {
         let panelHeight = size.height - 60
         recipePanel = RecipePanelNode(recipes: KitchenScene.allRecipes, width: 200, height: panelHeight)
         recipePanel.position = CGPoint(x: recipePanelCentreX, y: size.height / 2)
-        addChild(recipePanel)
+        gameLayer.addChild(recipePanel)
     }
 
     // MARK: - Customer seating
@@ -311,7 +319,7 @@ class KitchenScene: SKScene {
         let seatPos = seatPositionForSlot(slotIndex)
         node.position = seatPos
         node.zPosition = 1
-        addChild(node)
+        gameLayer.addChild(node)
         node.animateEntrance()
 
         // Start customer timer
@@ -358,6 +366,30 @@ class KitchenScene: SKScene {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         let tappedNodes = nodes(at: location)
+
+        // Pause menu interactions (always active)
+        if pauseOverlay != nil {
+            for node in tappedNodes {
+                if node.name == "resumeButton" {
+                    resumeGame()
+                    return
+                }
+                if node.name == "restartButton" {
+                    resumeGame()
+                    restartGame()
+                    return
+                }
+            }
+            return // Block all other taps while paused
+        }
+
+        // Pause button
+        for node in tappedNodes {
+            if node.name == "pauseButton" {
+                pauseGame()
+                return
+            }
+        }
 
         // 0a. Next button (game end screen)
         for node in tappedNodes {
@@ -976,7 +1008,7 @@ class KitchenScene: SKScene {
         dish.size = CGSize(width: 90, height: 90)
         dish.position = CGPoint(x: benchLeftEdge + benchWidth / 2, y: customerNode.position.y)
         dish.zPosition = 2
-        addChild(dish)
+        gameLayer.addChild(dish)
         benchDishSprites[ObjectIdentifier(customerNode)] = dish
     }
 
@@ -1001,7 +1033,86 @@ class KitchenScene: SKScene {
         let stackOffset: CGFloat = 6
         dish.position = CGPoint(x: sinkCentreX + 15, y: sinkY + CGFloat(dirtyDishCount - 1) * stackOffset)
         dish.zPosition = CGFloat(dirtyDishCount) + 1
-        addChild(dish)
+        gameLayer.addChild(dish)
         dirtyDishSprites.append(dish)
+    }
+
+    // MARK: - Pause menu
+
+    private var pauseOverlay: SKNode?
+
+    private func pauseGame() {
+        guard pauseOverlay == nil else { return }
+        gameLayer.isPaused = true
+
+        let container = SKNode()
+        container.zPosition = 200
+
+        // Dimmed background
+        let bg = SKShapeNode(rectOf: size)
+        bg.fillColor = UIColor(white: 0, alpha: 0.5)
+        bg.strokeColor = .clear
+        bg.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        container.addChild(bg)
+
+        // Card
+        let card = SKShapeNode(rectOf: CGSize(width: 300, height: 220), cornerRadius: 20)
+        card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+        card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        card.lineWidth = 3
+        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        container.addChild(card)
+
+        // Title
+        let title = SKLabelNode(text: "Paused")
+        title.fontSize = 28
+        title.fontName = "AvenirNext-Bold"
+        title.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        title.verticalAlignmentMode = .center
+        title.position = CGPoint(x: size.width / 2, y: size.height / 2 + 65)
+        container.addChild(title)
+
+        // Resume button
+        let resumeBtn = SKShapeNode(rectOf: CGSize(width: 220, height: 48), cornerRadius: 14)
+        resumeBtn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
+        resumeBtn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        resumeBtn.lineWidth = 2.5
+        resumeBtn.position = CGPoint(x: size.width / 2, y: size.height / 2 + 10)
+        resumeBtn.name = "resumeButton"
+        container.addChild(resumeBtn)
+
+        let resumeLabel = SKLabelNode(text: "Resume Game")
+        resumeLabel.fontSize = 18
+        resumeLabel.fontName = "AvenirNext-Bold"
+        resumeLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        resumeLabel.verticalAlignmentMode = .center
+        resumeLabel.name = "resumeButton"
+        resumeBtn.addChild(resumeLabel)
+
+        // Restart button
+        let restartBtn = SKShapeNode(rectOf: CGSize(width: 220, height: 48), cornerRadius: 14)
+        restartBtn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
+        restartBtn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        restartBtn.lineWidth = 2.5
+        restartBtn.position = CGPoint(x: size.width / 2, y: size.height / 2 - 50)
+        restartBtn.name = "restartButton"
+        container.addChild(restartBtn)
+
+        let restartLabel = SKLabelNode(text: "Restart Level")
+        restartLabel.fontSize = 18
+        restartLabel.fontName = "AvenirNext-Bold"
+        restartLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        restartLabel.verticalAlignmentMode = .center
+        restartLabel.name = "restartButton"
+        restartBtn.addChild(restartLabel)
+
+        addChild(container)
+        pauseOverlay = container
+    }
+
+    private func resumeGame() {
+        pauseOverlay?.removeFromParent()
+        pauseOverlay = nil
+        gameLayer.isPaused = false
     }
 }

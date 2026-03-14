@@ -13,17 +13,36 @@ class ScoreNode: SKNode {
         background.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
         background.lineWidth = 2.5
 
+        // Pause icon on the left
+        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
+        let pauseImage = UIImage(systemName: "pause.fill", withConfiguration: config)!
+            .withTintColor(UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0), renderingMode: .alwaysOriginal)
+        let pauseIcon = SKSpriteNode(texture: SKTexture(image: pauseImage))
+        pauseIcon.size = CGSize(width: 18, height: 18)
+        pauseIcon.position = CGPoint(x: -width / 2 + 22, y: 0)
+        pauseIcon.name = "pauseButton"
+
+        // Divider line
+        let divider = SKShapeNode(rectOf: CGSize(width: 1.5, height: 30))
+        divider.fillColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        divider.strokeColor = .clear
+        divider.position = CGPoint(x: -width / 2 + 42, y: 0)
+
+        // Score label shifted right
         label = SKLabelNode(text: "Score: 0")
         label.fontSize = 24
         label.fontName = "AvenirNext-Bold"
         label.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: 15, y: 0)
 
         super.init()
 
         name = "score"
         addChild(background)
+        background.addChild(pauseIcon)
+        background.addChild(divider)
         addChild(label)
     }
 
