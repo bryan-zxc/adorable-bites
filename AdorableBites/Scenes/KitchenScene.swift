@@ -91,6 +91,7 @@ class KitchenScene: SKScene {
     private var seatPositions: [CGPoint] = []
     private var customerNodes: [CustomerNode] = []
     private var customerData: [Customer] = []
+    private var customerSeatIndices: [ObjectIdentifier: Int] = [:]
 
     // MARK: - Layout zones
 
@@ -313,26 +314,30 @@ class KitchenScene: SKScene {
     }
 
     private var canSpawnMore: Bool { totalCustomersSpawned < seatCount }
-    private var hasAvailableSeat: Bool {
-        // A seat is available if not occupied by a customer and not blocked by money
-        let occupiedCount = customerNodes.count
-        for i in occupiedCount..<seatCount {
-            if !blockedSeats.contains(i) { return true }
+    private func firstAvailableSeatIndex() -> Int? {
+        // Find the first seat not occupied by a customer and not blocked by money
+        let occupiedSeats = Set(customerNodes.map { customerSeatIndices[ObjectIdentifier($0)] ?? -1 })
+        for i in 0..<seatCount {
+            if !occupiedSeats.contains(i) && !blockedSeats.contains(i) {
+                return i
+            }
         }
-        return false
+        return nil
     }
 
     private func spawnCustomer() {
-        guard canSpawnMore && hasAvailableSeat else { return }
+        guard canSpawnMore else { return }
+        guard let availableSeat = firstAvailableSeatIndex() else { return }
         totalCustomersSpawned += 1
         let customer = KitchenScene.customerPool.randomElement()!
         let node = CustomerNode(customer: customer)
-        let slotIndex = customerNodes.count
+        let slotIndex = availableSeat
         let seatPos = seatPositionForSlot(slotIndex)
         node.position = seatPos
         node.zPosition = 1
         gameLayer.addChild(node)
         node.animateEntrance()
+        customerSeatIndices[ObjectIdentifier(node)] = slotIndex
 
         // Start customer timer
         node.onTimerExpired = { [weak self, weak node] in
@@ -360,11 +365,11 @@ class KitchenScene: SKScene {
             node.animateExit {
                 node.removeFromParent()
             }
+            self.customerSeatIndices.removeValue(forKey: ObjectIdentifier(node))
             self.customerNodes.remove(at: idx)
             self.customerData.remove(at: idx)
-            self.repositionCustomerStrip()
 
-            if self.platesRemaining > 0 && self.canSpawnMore {
+            if self.canSpawnMore {
                 self.spawnCustomer()
             }
 
@@ -694,8 +699,11 @@ class KitchenScene: SKScene {
             }
 
             // Customer stays to eat — when done, place money on bench
-            customerNodes.first?.onFinishedEating = { [weak self] in
-                self?.handleCustomerFinishedEating(payment: payment)
+            if let customerNode = customerNodes.first {
+                let seatIdx = customerSeatIndices[ObjectIdentifier(customerNode)] ?? 0
+                customerNode.onFinishedEating = { [weak self] in
+                    self?.handleCustomerFinishedEating(payment: payment, seatIndex: seatIdx)
+                }
             }
             customerNodes.first?.startEating(duration: 5.0)
         } else {
@@ -708,24 +716,23 @@ class KitchenScene: SKScene {
             }
         }
 
-        // Reset kitchen immediately so player can start next order while customer eats
+        // Reset stove only — mixer may already have ingredients for the next order
         stoveTop.reset()
-        mixerNode.reset()
         hideMixerBin()
         hidePanBin()
 
         gamePhase = .addingIngredients
     }
 
-    private func handleCustomerFinishedEating(payment: Int = 0) {
+    private func handleCustomerFinishedEating(payment: Int = 0, seatIndex: Int = 0) {
         // Remove dish from bench and add dirty dish to sink
         if let customerNode = customerNodes.first {
             removeDishFromBench(for: customerNode)
             addDirtyDish()
 
-            // Place money on bench where customer was sitting
-            if payment > 0 {
-                placeMoneyOnBench(seatPosition: customerNode.position, payment: payment)
+            // Place money on bench at the seat where customer was
+            if payment > 0 && seatIndex < seatPositions.count {
+                placeMoneyAtSeat(seatIndex: seatIndex, payment: payment)
             }
         }
         removeFirstCustomerAndContinue()
@@ -737,14 +744,14 @@ class KitchenScene: SKScene {
             return
         }
 
+        customerSeatIndices.removeValue(forKey: ObjectIdentifier(node))
         node.animateExit {
             node.removeFromParent()
         }
         customerNodes.removeFirst()
         customerData.removeFirst()
-        repositionCustomerStrip()
 
-        if platesRemaining > 0 && canSpawnMore {
+        if canSpawnMore {
             spawnCustomer()
         }
 
@@ -1002,6 +1009,7 @@ class KitchenScene: SKScene {
         seatPositions.removeAll()
         customerNodes.removeAll()
         customerData.removeAll()
+        customerSeatIndices.removeAll()
         plateSprites.removeAll()
         dirtyDishSprites.removeAll()
         dirtyDishCount = 0
@@ -1085,14 +1093,14 @@ class KitchenScene: SKScene {
 
     // MARK: - Money on bench
 
-    private func placeMoneyOnBench(seatPosition: CGPoint, payment: Int) {
-        // Find which seat index this position corresponds to
-        guard let seatIndex = seatPositions.firstIndex(where: { $0 == seatPosition }) else { return }
+    private func placeMoneyAtSeat(seatIndex: Int, payment: Int) {
+        guard seatIndex < seatPositions.count else { return }
+        let seatPos = seatPositions[seatIndex]
 
         let texture = SKTexture(imageNamed: "money")
         let money = SKSpriteNode(texture: texture)
         money.size = CGSize(width: 60, height: 60)
-        money.position = CGPoint(x: benchLeftEdge + benchWidth / 2, y: seatPosition.y)
+        money.position = CGPoint(x: benchLeftEdge + benchWidth / 2, y: seatPos.y)
         money.zPosition = 3
         money.name = "benchMoney_\(seatIndex)"
         gameLayer.addChild(money)
