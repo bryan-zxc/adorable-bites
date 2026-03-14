@@ -62,6 +62,8 @@ ASSETS = [
     ("burnt_food", "generic charred blackened burnt food, dark brown and black, no pan, transparent background, top-down view"),
     # Furniture
     ("kitchen_counter", "large rectangular clean kitchen counter surface, light marble or light wood, no objects on it, top-down view"),
+    # Plating
+    ("plate", "single clean white dinner plate, top-down view, simple round plate, no food on it"),
     # Button icons (small, simple, icon-style — not detailed images)
     ("icon_whisk", "tiny cute cartoon whisk icon, simple minimal design, small icon size, no background"),
     ("icon_serve", "tiny cute cartoon serving cloche dome icon, simple minimal design, small icon size, no background"),

@@ -4,7 +4,8 @@ class ScoreNode: SKNode {
 
     private let background: SKShapeNode
     private let label: SKLabelNode
-    private var score: Int = 0
+    private(set) var score: Int = 0
+    var currentScore: Int { score }
 
     init(width: CGFloat = 200) {
         background = SKShapeNode(rectOf: CGSize(width: width, height: 50), cornerRadius: 14)

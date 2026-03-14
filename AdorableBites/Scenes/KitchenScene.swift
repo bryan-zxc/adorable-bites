@@ -65,6 +65,12 @@ class KitchenScene: SKScene {
     private var mixerBinButton: SKSpriteNode!
     private var panBinButton: SKSpriteNode!
 
+    // Plates
+    private var plateSprites: [SKSpriteNode] = []
+    private let totalPlates = 1  // TODO: change back to 5 after testing
+    private var platesRemaining = 1
+    private var customersServed = 0
+
     // MARK: - Bench and seating
 
     private let seatCount = 5
@@ -81,8 +87,9 @@ class KitchenScene: SKScene {
     private var recipePanelCentreX: CGFloat { size.width - 110 }
     private var recipePanelLeftEdge: CGFloat { recipePanelCentreX - 100 }
     private var kitchenCentreX: CGFloat { (benchRightEdge + recipePanelLeftEdge) / 2 }
-    private var mixerX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.3 }
-    private var stoveX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.7 }
+    private var plateX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.18 }
+    private var stoveX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.48 }
+    private var mixerX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.78 }
     private let workstationY: CGFloat = 370
 
     // MARK: - Scene lifecycle
@@ -100,6 +107,7 @@ class KitchenScene: SKScene {
         setupKitchenCounter()
         setupMixer()
         setupStoveTop()
+        setupPlateStack()
         setupMixButton()
         setupServeButton()
         setupBinButtons()
@@ -202,6 +210,27 @@ class KitchenScene: SKScene {
         mixerNode.position = CGPoint(x: mixerX, y: workstationY + 10)
         mixerNode.zPosition = 1
         addChild(mixerNode)
+    }
+
+    private func setupPlateStack() {
+        let plateSize: CGFloat = 70
+        let stackOffset: CGFloat = 6
+
+        for i in 0..<totalPlates {
+            let texture = SKTexture(imageNamed: "plate")
+            let plate = SKSpriteNode(texture: texture)
+            plate.size = CGSize(width: plateSize, height: plateSize)
+            plate.position = CGPoint(x: plateX, y: workstationY + CGFloat(i) * stackOffset)
+            plate.zPosition = CGFloat(i) + 1
+            addChild(plate)
+            plateSprites.append(plate)
+        }
+    }
+
+    private func updatePlateStack() {
+        for (index, plate) in plateSprites.enumerated() {
+            plate.isHidden = index >= platesRemaining
+        }
     }
 
     private func setupStoveTop() {
@@ -330,7 +359,15 @@ class KitchenScene: SKScene {
         let location = touch.location(in: self)
         let tappedNodes = nodes(at: location)
 
-        // 0. Active quiz takes priority
+        // 0a. Next button (game end screen)
+        for node in tappedNodes {
+            if node.name == "nextButton" {
+                restartGame()
+                return
+            }
+        }
+
+        // 0b. Active quiz takes priority
         if let quiz = activeQuiz {
             if quiz.handleTap(at: location) {
                 return
@@ -532,8 +569,37 @@ class KitchenScene: SKScene {
             scoreNode.decrement()
         }
 
+        // Use a plate
+        platesRemaining -= 1
+        customersServed += 1
+        updatePlateStack()
+
         run(SKAction.wait(forDuration: 1.5)) { [weak self] in
-            self?.resetForNextOrder()
+            guard let self else { return }
+
+            // Remove served customer from queue before game-over check
+            if let servedNode = self.customerNodes.first {
+                servedNode.animateExit {
+                    servedNode.removeFromParent()
+                }
+                self.customerNodes.removeFirst()
+                self.customerData.removeFirst()
+            }
+
+            if self.platesRemaining <= 0 {
+                self.handleGameOver()
+            } else {
+                self.repositionCustomerStrip()
+                self.spawnCustomer()
+                self.stoveTop.reset()
+                self.mixerNode.reset()
+                self.hideMixButton()
+                self.hideServeButton()
+                self.hideMixerBin()
+                self.hidePanBin()
+                self.resetIngredientShelf()
+                self.gamePhase = .addingIngredients
+            }
         }
     }
 
@@ -596,6 +662,176 @@ class KitchenScene: SKScene {
             let target = seatPositionForSlot(index)
             node.run(SKAction.move(to: target, duration: 0.3))
         }
+    }
+
+    // MARK: - Game end
+
+    private func handleGameOver() {
+        // Total customers is seatCount. We served customersServed of them.
+        let unservedCount = seatCount - customersServed
+        if unservedCount > 0 {
+            showUnservedPopup(count: unservedCount) { [weak self] in
+                self?.showGameEndScreen()
+            }
+        } else {
+            showGameEndScreen()
+        }
+    }
+
+    private func showUnservedPopup(count: Int, completion: @escaping () -> Void) {
+        // Deduct points for unserved customers
+        let penalty = count
+        for _ in 0..<penalty {
+            scoreNode.decrement()
+        }
+
+        // Show all unserved customers with crosses
+        for node in customerNodes {
+            node.showRejected()
+        }
+
+        // Overlay
+        let overlay = SKShapeNode(rectOf: size)
+        overlay.fillColor = UIColor(white: 0, alpha: 0.5)
+        overlay.strokeColor = .clear
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.zPosition = 85
+        overlay.name = "unservedOverlay"
+        addChild(overlay)
+
+        // Card
+        let card = SKShapeNode(rectOf: CGSize(width: 400, height: 200), cornerRadius: 20)
+        card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+        card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        card.lineWidth = 3
+        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        card.zPosition = 86
+        card.name = "unservedCard"
+        addChild(card)
+
+        let title = SKLabelNode(text: "No plates left!")
+        title.fontSize = 26
+        title.fontName = "AvenirNext-Bold"
+        title.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        title.verticalAlignmentMode = .center
+        title.position = CGPoint(x: size.width / 2, y: size.height / 2 + 40)
+        title.zPosition = 87
+        addChild(title)
+
+        let detail = SKLabelNode(text: "\(count) customer\(count == 1 ? "" : "s") left hungry  −\(penalty) points")
+        detail.fontSize = 20
+        detail.fontName = "AvenirNext-Medium"
+        detail.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
+        detail.verticalAlignmentMode = .center
+        detail.position = CGPoint(x: size.width / 2, y: size.height / 2 - 10)
+        detail.zPosition = 87
+        addChild(detail)
+
+        // Auto-dismiss after 2.5s
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: 2.5),
+            SKAction.run {
+                overlay.removeFromParent()
+                card.removeFromParent()
+                title.removeFromParent()
+                detail.removeFromParent()
+            },
+            SKAction.wait(forDuration: 0.3),
+            SKAction.run { completion() }
+        ]))
+    }
+
+    private func showGameEndScreen() {
+        let finalScore = scoreNode.currentScore
+        let isPositive = finalScore > 0
+
+        // Dim overlay
+        let overlay = SKShapeNode(rectOf: size)
+        overlay.fillColor = UIColor(white: 0, alpha: 0.6)
+        overlay.strokeColor = .clear
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.zPosition = 90
+        addChild(overlay)
+
+        // Card
+        let card = SKShapeNode(rectOf: CGSize(width: 450, height: 400), cornerRadius: 24)
+        card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+        card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        card.lineWidth = 3
+        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        card.zPosition = 91
+        addChild(card)
+
+        // Dora
+        let doraTexture = SKTexture(imageNamed: "dora")
+        let dora = SKSpriteNode(texture: doraTexture)
+        let doraHeight: CGFloat = 200
+        let doraScale = doraHeight / doraTexture.size().height
+        dora.size = CGSize(width: doraTexture.size().width * doraScale, height: doraHeight)
+        dora.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        dora.zPosition = 92
+        addChild(dora)
+
+        // Message depends on score
+        let messageText = isPositive ? "Congratulations!" : "Better luck next time!"
+        let message = SKLabelNode(text: messageText)
+        message.fontSize = 32
+        message.fontName = "AvenirNext-Bold"
+        message.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        message.verticalAlignmentMode = .center
+        message.position = CGPoint(x: size.width / 2, y: size.height / 2 - 60)
+        message.zPosition = 92
+        addChild(message)
+
+        // Score
+        let scoreText = isPositive ? "You scored \(finalScore)!" : "You got \(finalScore) — you can do better!"
+        let scoreLabel = SKLabelNode(text: scoreText)
+        scoreLabel.fontSize = 22
+        scoreLabel.fontName = "AvenirNext-Bold"
+        scoreLabel.fontColor = UIColor(red: 0.5, green: 0.35, blue: 0.15, alpha: 1.0)
+        scoreLabel.verticalAlignmentMode = .center
+        scoreLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 100)
+        scoreLabel.zPosition = 92
+        addChild(scoreLabel)
+
+        // Play Again button
+        let nextBtn = SKShapeNode(rectOf: CGSize(width: 160, height: 50), cornerRadius: 14)
+        nextBtn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
+        nextBtn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        nextBtn.lineWidth = 2.5
+        nextBtn.position = CGPoint(x: size.width / 2, y: size.height / 2 - 155)
+        nextBtn.name = "nextButton"
+        nextBtn.zPosition = 92
+        addChild(nextBtn)
+
+        let nextLabel = SKLabelNode(text: "Play Again!")
+        nextLabel.fontSize = 20
+        nextLabel.fontName = "AvenirNext-Bold"
+        nextLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        nextLabel.verticalAlignmentMode = .center
+        nextLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 155)
+        nextLabel.name = "nextButton"
+        nextLabel.zPosition = 93
+        addChild(nextLabel)
+    }
+
+    private func restartGame() {
+        removeAllChildren()
+        removeAllActions()
+
+        ingredientShelfNodes.removeAll()
+        seatPositions.removeAll()
+        customerNodes.removeAll()
+        customerData.removeAll()
+        plateSprites.removeAll()
+        platesRemaining = totalPlates
+        customersServed = 0
+        gamePhase = .addingIngredients
+        activeQuiz = nil
+        pendingIngredientNode = nil
+
+        setupScene()
+        spawnCustomer()
     }
 
     // MARK: - Button visibility helpers
