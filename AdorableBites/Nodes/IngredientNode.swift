@@ -51,18 +51,26 @@ class IngredientNode: SKNode {
         ])
         sprite.run(SKAction.repeatForever(bob), withKey: "bob")
 
-        // Show X button
-        let x = SKLabelNode(text: "✕")
-        x.fontSize = 16
-        x.fontName = "AvenirNext-Bold"
-        x.fontColor = UIColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 1.0)
-        x.verticalAlignmentMode = .center
-        x.horizontalAlignmentMode = .center
-        x.position = CGPoint(x: sprite.size.width / 2 + 5, y: sprite.position.y + 30 + sprite.size.height / 2 + 5)
-        x.name = "ingredientClose"
-        x.zPosition = 5
-        addChild(x)
-        closeButton = x
+        // Show X button — red circle with white X, top-right of floated sprite
+        let bg = SKShapeNode(circleOfRadius: 12)
+        bg.fillColor = UIColor(red: 0.85, green: 0.2, blue: 0.2, alpha: 1.0)
+        bg.strokeColor = .white
+        bg.lineWidth = 2
+        bg.position = CGPoint(x: sprite.size.width / 2, y: 30 + sprite.size.height / 2)
+        bg.zPosition = 5
+        bg.name = "ingredientClose"
+
+        let xLabel = SKLabelNode(text: "✕")
+        xLabel.fontSize = 14
+        xLabel.fontName = "AvenirNext-Bold"
+        xLabel.fontColor = .white
+        xLabel.verticalAlignmentMode = .center
+        xLabel.horizontalAlignmentMode = .center
+        xLabel.name = "ingredientClose"
+        bg.addChild(xLabel)
+
+        addChild(bg)
+        closeButton = xLabel
 
         // Glow effect on sprite
         sprite.color = UIColor(red: 1.0, green: 0.95, blue: 0.5, alpha: 1.0)
@@ -76,7 +84,8 @@ class IngredientNode: SKNode {
         sprite.run(SKAction.move(to: originalSpritePosition, duration: 0.2))
         sprite.colorBlendFactor = 0
 
-        closeButton?.removeFromParent()
+        // Remove the circle background (parent of the label)
+        closeButton?.parent?.removeFromParent()
         closeButton = nil
     }
 
@@ -88,10 +97,11 @@ class IngredientNode: SKNode {
     }
 
     func isCloseButtonTap(at point: CGPoint) -> Bool {
-        guard let close = closeButton else { return false }
+        guard let close = closeButton, let circleBg = close.parent else { return false }
         let localPoint = convert(point, from: parent!)
-        // Generous hit area around the X
-        let hitArea = close.frame.insetBy(dx: -15, dy: -15)
-        return hitArea.contains(localPoint)
+        // Generous hit area around the circle
+        let circlePos = circleBg.position
+        let distance = hypot(localPoint.x - circlePos.x, localPoint.y - circlePos.y)
+        return distance < 25
     }
 }
