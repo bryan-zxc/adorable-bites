@@ -1,0 +1,25 @@
+name: AdorableBites
+options:
+  bundleIdPrefix: com.adorablebites
+  deploymentTarget:
+    iOS: "26.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    TARGETED_DEVICE_FAMILY: "2"
+    INFOPLIST_KEY_UILaunchScreen_Generation: true
+    INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    SWIFT_VERSION: "6.0"
+
+targets:
+  AdorableBites:
+    type: application
+    platform: iOS
+    sources:
+      - path: AdorableBites
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.adorablebites.app
+        INFOPLIST_KEY_CFBundleDisplayName: "Adorable Bites"
+        GENERATE_INFOPLIST_FILE: YES

@@ -21,4 +21,12 @@ A cooking/restaurant game where:
 - **Language:** Swift
 - **Framework:** SpriteKit (2D game framework)
 - **Platform:** iPadOS
+- **Target device:** iPad mini
 - **IDE:** Xcode
+
+## Art Generation
+- **Always use the Python scripts in `scripts/` to generate or edit game art** — never generate images any other way
+- `uv run scripts/generate_art.py` — generate all assets, or pass a name to generate one (e.g. `uv run scripts/generate_art.py frying_pan`)
+- `uv run scripts/edit_art.py <image_path> "<prompt>"` — edit an existing image in place
+- These scripts use Google Gemini via the API key in `scripts/.env.local`
+- New assets must be added to the `ASSETS` list in `generate_art.py` before generating
