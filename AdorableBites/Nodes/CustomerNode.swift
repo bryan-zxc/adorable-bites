@@ -142,6 +142,9 @@ class CustomerNode: SKNode {
         timerBarBackground.isHidden = false
         timerBarFill.isHidden = false
 
+        // Hide speech bubble while eating
+        speechBubble.run(SKAction.fadeOut(withDuration: 0.3))
+
         // Blue countdown bar while eating
         updateTimerBar(progress: 1.0, colour: UIColor(red: 0.4, green: 0.5, blue: 0.85, alpha: 1.0))
 
@@ -231,14 +234,17 @@ class CustomerNode: SKNode {
 
         tick.run(SKAction.sequence([
             SKAction.scale(to: 1.3, duration: 0.15),
-            SKAction.scale(to: 1.0, duration: 0.1)
+            SKAction.scale(to: 1.0, duration: 0.1),
+            SKAction.wait(forDuration: 0.8),
+            SKAction.fadeOut(withDuration: 0.3),
+            SKAction.removeFromParent()
         ]))
 
         let bounce = SKAction.sequence([
             SKAction.moveBy(x: 0, y: 10, duration: 0.12),
             SKAction.moveBy(x: 0, y: -10, duration: 0.12)
         ])
-        run(SKAction.repeat(bounce, count: 3))
+        run(SKAction.repeat(bounce, count: 2))
     }
 
     func showRejected() {

@@ -56,6 +56,8 @@ To modify an existing image (e.g. rotate it, change a detail, adjust colours):
 uv run scripts/edit_art.py <path-to-image> "<what to change>"
 ```
 
+**When to use edit vs generate:** If an asset already exists and needs modification (remove an element, change a colour, adjust a detail), always use the edit script rather than regenerating from scratch. Regenerating produces a completely different image, while editing preserves the existing style and makes targeted changes.
+
 Example:
 ```bash
 uv run scripts/edit_art.py AdorableBites/Assets.xcassets/frying_pan.imageset/frying_pan@2x.png "rotate the pan 90 degrees clockwise so the handle points down"
