@@ -74,6 +74,7 @@ class KitchenScene: SKScene {
     private let totalPlates = 3  // TODO: change back to 5 after testing
     private var platesRemaining = 3
     private var customersServed = 0
+    private var totalCustomersSpawned = 0
 
     // MARK: - Bench and seating
 
@@ -298,7 +299,11 @@ class KitchenScene: SKScene {
         return seatPositions[index]
     }
 
+    private var canSpawnMore: Bool { totalCustomersSpawned < seatCount }
+
     private func spawnCustomer() {
+        guard canSpawnMore else { return }
+        totalCustomersSpawned += 1
         let customer = KitchenScene.customerPool.randomElement()!
         let node = CustomerNode(customer: customer)
         let slotIndex = customerNodes.count
@@ -338,7 +343,7 @@ class KitchenScene: SKScene {
             self.customerData.remove(at: idx)
             self.repositionCustomerStrip()
 
-            if self.platesRemaining > 0 {
+            if self.platesRemaining > 0 && self.canSpawnMore {
                 self.spawnCustomer()
             }
 
@@ -621,7 +626,7 @@ class KitchenScene: SKScene {
         customerData.removeFirst()
         repositionCustomerStrip()
 
-        if platesRemaining > 0 {
+        if platesRemaining > 0 && canSpawnMore {
             spawnCustomer()
         }
 
@@ -859,6 +864,7 @@ class KitchenScene: SKScene {
         benchDishSprites.removeAll()
         platesRemaining = totalPlates
         customersServed = 0
+        totalCustomersSpawned = 0
         gamePhase = .addingIngredients
         activeQuiz = nil
         pendingIngredientNode = nil
