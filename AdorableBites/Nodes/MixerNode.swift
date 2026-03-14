@@ -16,9 +16,11 @@ class MixerNode: SKNode {
     var canMix: Bool { state == .unmixed }
     var canPour: Bool { state == .ready }
     var isEmpty: Bool { state == .empty }
+    var canReceiveIngredient: Bool { state == .empty || state == .unmixed }
 
     private let bowlSprite: SKSpriteNode
     private var contentsOverlay: SKSpriteNode?
+    private var dropTargetBorder: SKShapeNode?
     private let mixerSize: CGSize
 
     // Progress bar
@@ -149,10 +151,39 @@ class MixerNode: SKNode {
         bowlSprite.zRotation = 0
         contentsOverlay?.removeFromParent()
         contentsOverlay = nil
+        hideDropTarget()
         progressBar.alpha = 0
         progressFill.path = nil
         placedIngredients = []
         state = .empty
+    }
+
+    // MARK: - Drop target
+
+    func showDropTarget(active: Bool) {
+        hideDropTarget()
+        let border = SKShapeNode(rectOf: CGSize(width: mixerSize.width + 12, height: mixerSize.height + 12), cornerRadius: 14)
+        border.fillColor = .clear
+        border.strokeColor = active
+            ? UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 0.9)
+            : UIColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 0.6)
+        border.lineWidth = 3
+        border.glowWidth = active ? 4 : 0
+        border.zPosition = -0.5
+        addChild(border)
+        dropTargetBorder = border
+
+        let pulse = SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 0.4),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.4)
+        ])
+        border.run(SKAction.repeatForever(pulse), withKey: "dropPulse")
+    }
+
+    func hideDropTarget() {
+        dropTargetBorder?.removeAllActions()
+        dropTargetBorder?.removeFromParent()
+        dropTargetBorder = nil
     }
 
     private func showOverlay(imageNamed: String) {

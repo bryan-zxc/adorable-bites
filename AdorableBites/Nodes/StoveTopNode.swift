@@ -69,22 +69,26 @@ class StoveTopNode: SKNode {
 
     // MARK: - Batter flow
 
+    var canReceiveIngredient: Bool { panState == .empty || panState == .rawBatter }
+    private var cookingCompleteCallback: (() -> Void)?
+    private var burntCallback: (() -> Void)?
+
     func receiveBatter(ingredients: [Ingredient], cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
         guard panState == .empty else { return }
         storedIngredients = ingredients
         panState = .rawBatter
+        cookingCompleteCallback = cookingComplete
+        burntCallback = burnt
         showOverlay(imageNamed: "raw_batter_in_pan")
-
-        // Brief pause to show raw batter, then auto-start cooking
-        run(SKAction.sequence([
-            SKAction.wait(forDuration: 0.5),
-            SKAction.run { [weak self] in
-                self?.startCooking(cookingComplete: cookingComplete, burnt: burnt)
-            }
-        ]))
     }
 
-    private func startCooking(cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
+    func startCooking() {
+        guard panState == .rawBatter else { return }
+        guard let cookingComplete = cookingCompleteCallback, let burnt = burntCallback else { return }
+        startCookingInternal(cookingComplete: cookingComplete, burnt: burnt)
+    }
+
+    private func startCookingInternal(cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
         guard panState == .rawBatter else { return }
         panState = .cooking
 
@@ -205,12 +209,45 @@ class StoveTopNode: SKNode {
         removeAllActions()
         panState = .empty
         storedIngredients.removeAll()
+        cookingCompleteCallback = nil
+        burntCallback = nil
         contentsOverlay?.removeFromParent()
         contentsOverlay = nil
+        hideDropTarget()
         progressBar.alpha = 0
         glowRing?.removeAllActions()
         glowRing?.removeFromParent()
         glowRing = nil
+    }
+
+    // MARK: - Drop target
+
+    private var dropTargetBorder: SKShapeNode?
+
+    func showDropTarget(active: Bool) {
+        hideDropTarget()
+        let border = SKShapeNode(rectOf: CGSize(width: stoveSize.width + 12, height: stoveSize.height + 12), cornerRadius: 14)
+        border.fillColor = .clear
+        border.strokeColor = active
+            ? UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 0.9)
+            : UIColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 0.6)
+        border.lineWidth = 3
+        border.glowWidth = active ? 4 : 0
+        border.zPosition = -0.5
+        addChild(border)
+        dropTargetBorder = border
+
+        let pulse = SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 0.4),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.4)
+        ])
+        border.run(SKAction.repeatForever(pulse), withKey: "dropPulse")
+    }
+
+    func hideDropTarget() {
+        dropTargetBorder?.removeAllActions()
+        dropTargetBorder?.removeFromParent()
+        dropTargetBorder = nil
     }
 
     // MARK: - Helpers

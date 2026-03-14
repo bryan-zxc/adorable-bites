@@ -5,6 +5,9 @@ class IngredientNode: SKNode {
     let ingredient: Ingredient
     private let sprite: SKSpriteNode
     private let nameLabel: SKLabelNode
+    private var closeButton: SKLabelNode?
+    private(set) var isPickedUp: Bool = false
+    private var originalSpritePosition: CGPoint = .zero
 
     init(ingredient: Ingredient, spriteSize: CGFloat = 54, labelOffsetX: CGFloat = 0, labelOffsetY: CGFloat = -95) {
         self.ingredient = ingredient
@@ -32,6 +35,51 @@ class IngredientNode: SKNode {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: - Pickup system
+
+    func animatePickup() {
+        isPickedUp = true
+        originalSpritePosition = sprite.position
+
+        // Lift sprite above shelf
+        sprite.run(SKAction.moveBy(x: 0, y: 30, duration: 0.2))
+
+        // Gentle bobbing
+        let bob = SKAction.sequence([
+            SKAction.moveBy(x: 0, y: 5, duration: 0.5),
+            SKAction.moveBy(x: 0, y: -5, duration: 0.5)
+        ])
+        sprite.run(SKAction.repeatForever(bob), withKey: "bob")
+
+        // Show X button
+        let x = SKLabelNode(text: "✕")
+        x.fontSize = 16
+        x.fontName = "AvenirNext-Bold"
+        x.fontColor = UIColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 1.0)
+        x.verticalAlignmentMode = .center
+        x.horizontalAlignmentMode = .center
+        x.position = CGPoint(x: sprite.size.width / 2 + 5, y: sprite.position.y + 30 + sprite.size.height / 2 + 5)
+        x.name = "ingredientClose"
+        x.zPosition = 5
+        addChild(x)
+        closeButton = x
+
+        // Glow effect on sprite
+        sprite.color = UIColor(red: 1.0, green: 0.95, blue: 0.5, alpha: 1.0)
+        sprite.colorBlendFactor = 0.2
+    }
+
+    func animateReturn() {
+        isPickedUp = false
+
+        sprite.removeAction(forKey: "bob")
+        sprite.run(SKAction.move(to: originalSpritePosition, duration: 0.2))
+        sprite.colorBlendFactor = 0
+
+        closeButton?.removeFromParent()
+        closeButton = nil
+    }
+
     func animatePop() {
         run(SKAction.sequence([
             SKAction.scale(to: 1.2, duration: 0.1),
@@ -39,11 +87,11 @@ class IngredientNode: SKNode {
         ]))
     }
 
-    func animateDimmed() {
-        alpha = 0.4
-    }
-
-    func animateReset() {
-        alpha = 1.0
+    func isCloseButtonTap(at point: CGPoint) -> Bool {
+        guard let close = closeButton else { return false }
+        let localPoint = convert(point, from: parent!)
+        // Generous hit area around the X
+        let hitArea = close.frame.insetBy(dx: -15, dy: -15)
+        return hitArea.contains(localPoint)
     }
 }

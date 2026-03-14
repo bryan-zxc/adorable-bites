@@ -54,9 +54,10 @@ class KitchenScene: SKScene {
     private var scoreNode: ScoreNode!
     private var recipePanel: RecipePanelNode!
 
-    // Quiz
+    // Quiz and pickup
     private var activeQuiz: QuizNode?
     private var pendingIngredientNode: IngredientNode?
+    private var pickedUpIngredient: IngredientNode?
 
     // Buttons
     private var mixerBinButton: SKSpriteNode!
@@ -373,6 +374,29 @@ class KitchenScene: SKScene {
             }
         }
 
+        // 0c. Pickup mode — ingredient is floating
+        if let picked = pickedUpIngredient {
+            // Tap X to return ingredient
+            if picked.isCloseButtonTap(at: location) {
+                cancelPickup()
+                return
+            }
+            // Tap active mixer target
+            for node in tappedNodes {
+                if findMixerNode(in: node) && mixerNode.canReceiveIngredient {
+                    if mixerNode.currentIngredients.contains(picked.ingredient) {
+                        // Duplicate — just return to shelf
+                        cancelPickup()
+                    } else {
+                        placeIngredientInMixer(picked)
+                    }
+                    return
+                }
+            }
+            // Tap grey/unavailable target or anything else — do nothing
+            return
+        }
+
         // 1. Bin buttons (always available when visible)
         for node in tappedNodes {
             if node.name == "mixerBin" {
@@ -385,31 +409,35 @@ class KitchenScene: SKScene {
             }
         }
 
-        // 2. Tap stove/pan to serve
-        if gamePhase == .readyToServe || gamePhase == .burnt {
-            for node in tappedNodes {
-                if findStoveNode(in: node) {
+        // 2. Tap stove/pan to serve or start cooking
+        for node in tappedNodes {
+            if findStoveNode(in: node) {
+                if gamePhase == .readyToServe || gamePhase == .burnt {
                     serveOrder()
+                    return
+                }
+                if stoveTop.panState == .rawBatter {
+                    startPanCooking()
                     return
                 }
             }
         }
 
-        // 3. Tap mixer to mix (when ingredients added) or pour (when batter ready)
+        // 3. Tap mixer to mix or pour
         for node in tappedNodes {
             if findMixerNode(in: node) {
-                if gamePhase == .addingIngredients && mixerNode.canMix {
+                if mixerNode.canMix {
                     startMixing()
                     return
                 }
-                if gamePhase == .batterReady {
+                if mixerNode.canPour {
                     pourBatterToPan()
                     return
                 }
             }
         }
 
-        // 5. Recipe panel
+        // 4. Recipe panel
         for node in tappedNodes {
             if node.name?.starts(with: "recipeRow") == true || node.parent?.name?.starts(with: "recipeRow") == true || node.parent?.parent?.name?.starts(with: "recipeRow") == true {
                 recipePanel.handleTap(at: location)
@@ -421,10 +449,10 @@ class KitchenScene: SKScene {
             }
         }
 
-        // 6. Ingredient taps
-        if gamePhase == .addingIngredients {
-            for node in tappedNodes {
-                if let ingredientNode = findIngredientNode(in: node) {
+        // 5. Ingredient taps — start quiz
+        for node in tappedNodes {
+            if let ingredientNode = findIngredientNode(in: node) {
+                if !ingredientNode.isPickedUp {
                     handleIngredientTap(ingredientNode)
                     return
                 }
@@ -459,27 +487,18 @@ class KitchenScene: SKScene {
     // MARK: - Ingredient handling
 
     private func handleIngredientTap(_ ingredientNode: IngredientNode) {
-        guard gamePhase == .addingIngredients else { return }
         guard activeQuiz == nil else { return }
+        guard pickedUpIngredient == nil else { return }
         guard customerData.first?.order != nil else { return }
 
-        let ingredient = ingredientNode.ingredient
-        if mixerNode.currentIngredients.contains(ingredient) { return }
-
-        // Show quiz — ingredient only added on correct answer
+        // Show quiz
         pendingIngredientNode = ingredientNode
         let quiz = QuizNode(sceneSize: size)
         quiz.position = CGPoint(x: size.width / 2, y: size.height / 2)
         quiz.configure(
             onCorrect: { [weak self] in
                 guard let self, let node = self.pendingIngredientNode else { return }
-                node.animatePop()
-                node.animateDimmed()
-                self.mixerNode.addIngredient(node.ingredient)
-                self.showMixerBin()
-                if self.mixerNode.canMix {
-                    self.pulseMixer()
-                }
+                self.enterPickupMode(node)
                 self.activeQuiz = nil
                 self.pendingIngredientNode = nil
             },
@@ -490,6 +509,43 @@ class KitchenScene: SKScene {
         )
         addChild(quiz)
         activeQuiz = quiz
+    }
+
+    // MARK: - Pickup mode
+
+    private func enterPickupMode(_ ingredientNode: IngredientNode) {
+        pickedUpIngredient = ingredientNode
+        ingredientNode.animatePickup()
+
+        // Show drop targets
+        mixerNode.showDropTarget(active: mixerNode.canReceiveIngredient)
+    }
+
+    private func cancelPickup() {
+        pickedUpIngredient?.animateReturn()
+        pickedUpIngredient = nil
+        mixerNode.hideDropTarget()
+    }
+
+    private func placeIngredientInMixer(_ ingredientNode: IngredientNode) {
+        ingredientNode.animateReturn()
+        pickedUpIngredient = nil
+        mixerNode.hideDropTarget()
+
+        mixerNode.addIngredient(ingredientNode.ingredient)
+        showMixerBin()
+
+        if mixerNode.canMix {
+            pulseMixer()
+        }
+    }
+
+    // MARK: - Pan cooking
+
+    private func startPanCooking() {
+        gamePhase = .cooking
+        stoveTop.startCooking()
+        showPanBin()
     }
 
     // MARK: - Mixing
@@ -523,7 +579,8 @@ class KitchenScene: SKScene {
         let ingredients = mixerNode.pourBatter()
         guard !ingredients.isEmpty else { return }
 
-        gamePhase = .cooking
+        // Batter goes to pan but doesn't auto-cook — player taps pan to start
+        gamePhase = .addingIngredients
         hideMixerBin()
 
         stoveTop.receiveBatter(
@@ -536,6 +593,8 @@ class KitchenScene: SKScene {
             }
         )
 
+        // Pulse stove to indicate "tap to cook"
+        pulseStove()
         showPanBin()
     }
 
@@ -600,7 +659,7 @@ class KitchenScene: SKScene {
         mixerNode.reset()
         hideMixerBin()
         hidePanBin()
-        resetIngredientShelf()
+
         gamePhase = .addingIngredients
     }
 
@@ -648,7 +707,7 @@ class KitchenScene: SKScene {
         mixerNode.setScale(1.0)
         mixerNode.reset()
         hideMixerBin()
-        resetIngredientShelf()
+
         gamePhase = .addingIngredients
     }
 
@@ -660,7 +719,7 @@ class KitchenScene: SKScene {
         mixerNode.reset()
         hidePanBin()
         hideMixerBin()
-        resetIngredientShelf()
+
         gamePhase = .addingIngredients
     }
 
@@ -671,7 +730,7 @@ class KitchenScene: SKScene {
         mixerNode.reset()
         hideMixerBin()
         hidePanBin()
-        resetIngredientShelf()
+
         gamePhase = .addingIngredients
 
         guard let servedNode = customerNodes.first else { return }
@@ -686,11 +745,6 @@ class KitchenScene: SKScene {
         }
     }
 
-    private func resetIngredientShelf() {
-        for node in ingredientShelfNodes {
-            node.animateReset()
-        }
-    }
 
     private func repositionCustomerStrip() {
         for (index, node) in customerNodes.enumerated() {
