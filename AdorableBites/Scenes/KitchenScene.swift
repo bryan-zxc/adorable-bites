@@ -2,6 +2,19 @@ import SpriteKit
 
 class KitchenScene: SKScene {
 
+    // MARK: - Game phase
+
+    enum GamePhase {
+        case addingIngredients
+        case mixing
+        case batterReady
+        case cooking
+        case readyToServe
+        case burnt
+    }
+
+    private var gamePhase: GamePhase = .addingIngredients
+
     // MARK: - Ingredients
 
     static let flour = Ingredient(name: "flour", colour: .systemYellow, imageName: "flour")
@@ -35,11 +48,18 @@ class KitchenScene: SKScene {
     // MARK: - Nodes
 
     private var ingredientShelfNodes: [IngredientNode] = []
+    private var mixerNode: MixerNode!
     private var stoveTop: StoveTopNode!
     private var scoreNode: ScoreNode!
+    private var recipePanel: RecipePanelNode!
+
+    // Buttons
+    private var mixButton: SKShapeNode!
+    private var mixLabel: SKLabelNode!
     private var serveButton: SKShapeNode!
     private var serveLabel: SKLabelNode!
-    private var recipePanel: RecipePanelNode!
+    private var mixerBinButton: SKSpriteNode!
+    private var panBinButton: SKSpriteNode!
 
     // MARK: - Bench and seating
 
@@ -57,6 +77,9 @@ class KitchenScene: SKScene {
     private var recipePanelCentreX: CGFloat { size.width - 110 }
     private var recipePanelLeftEdge: CGFloat { recipePanelCentreX - 100 }
     private var kitchenCentreX: CGFloat { (benchRightEdge + recipePanelLeftEdge) / 2 }
+    private var mixerX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.3 }
+    private var stoveX: CGFloat { benchRightEdge + (recipePanelLeftEdge - benchRightEdge) * 0.7 }
+    private let workstationY: CGFloat = 370
 
     // MARK: - Scene lifecycle
 
@@ -70,8 +93,13 @@ class KitchenScene: SKScene {
         setupScoreNode()
         setupBench()
         setupIngredientShelf()
+        setupKitchenCounter()
+        setupMixer()
         setupStoveTop()
+        setupMixButton()
         setupServeButton()
+        setupBinButtons()
+        setupDora()
         setupRecipePanel()
     }
 
@@ -92,7 +120,6 @@ class KitchenScene: SKScene {
         let benchHeight = benchTopY - benchBottomY
         let benchCentreY = (benchTopY + benchBottomY) / 2
 
-        // Stools: divide bench into 6 equal portions (half-portion margin each end, seats in middle 5)
         let portionHeight = benchHeight / CGFloat(seatCount + 1)
 
         for i in 0..<seatCount {
@@ -108,7 +135,6 @@ class KitchenScene: SKScene {
             addChild(stool)
         }
 
-        // Bench counter — to the right of the stools (kitchen-facing side)
         let benchTexture = SKTexture(imageNamed: "bench_counter")
         let bench = SKSpriteNode(texture: benchTexture)
         bench.size = CGSize(width: benchHeight, height: self.benchWidth)
@@ -121,7 +147,6 @@ class KitchenScene: SKScene {
     private func setupIngredientShelf() {
         let ingredientCount = CGFloat(KitchenScene.allIngredients.count)
 
-        // Pantry with padding on both sides so it doesn't touch bench or recipe panel
         let pantryPadding: CGFloat = 15
         let pantryWidth = recipePanelLeftEdge - benchRightEdge - pantryPadding * 2
         let pantryHeight: CGFloat = 180
@@ -135,19 +160,16 @@ class KitchenScene: SKScene {
         pantry.zPosition = -1
         addChild(pantry)
 
-        // Place ingredients centred in each compartment
         let compartmentWidth = pantryWidth / ingredientCount
         let pantryLeftEdge = benchRightEdge + pantryPadding
         let pantryInset: CGFloat = 22
         let startX = pantryLeftEdge + pantryInset + (pantryWidth - pantryInset * 2) / ingredientCount / 2
 
-        // Compartment openings occupy the upper ~75%, name tags the lower ~25%
         let ingredientY = shelfY + pantryHeight * 0.125
         let labelOffsetY = -pantryHeight * 0.5
         let spriteSize = min(compartmentWidth, pantryHeight * 0.75) * 0.7
         let insetCompartmentWidth = (pantryWidth - pantryInset * 2) / ingredientCount
         for (index, ingredient) in KitchenScene.allIngredients.enumerated() {
-            // Label X offset: shift label from inset position to full-width tag position
             let ingredientX = startX + CGFloat(index) * insetCompartmentWidth
             let tagInset = pantryInset * 0.5
             let tagCompartmentWidth = (pantryWidth - tagInset * 2) / ingredientCount
@@ -161,30 +183,121 @@ class KitchenScene: SKScene {
         }
     }
 
+    private func setupKitchenCounter() {
+        let counterWidth = recipePanelLeftEdge - benchRightEdge - 20
+        let counterHeight: CGFloat = 280
+        let counterTexture = SKTexture(imageNamed: "kitchen_counter")
+        let counter = SKSpriteNode(texture: counterTexture)
+        counter.size = CGSize(width: counterWidth, height: counterHeight)
+        counter.position = CGPoint(x: kitchenCentreX, y: workstationY)
+        counter.zPosition = -1
+        addChild(counter)
+    }
+
+    private func setupMixer() {
+        mixerNode = MixerNode(size: CGSize(width: 150, height: 150))
+        mixerNode.position = CGPoint(x: mixerX, y: workstationY + 10)
+        mixerNode.zPosition = 1
+        addChild(mixerNode)
+    }
+
     private func setupStoveTop() {
-        stoveTop = StoveTopNode(size: CGSize(width: 200, height: 200))
-        stoveTop.position = CGPoint(x: kitchenCentreX, y: size.height / 2 - 100)
+        stoveTop = StoveTopNode(size: CGSize(width: 170, height: 170))
+        stoveTop.position = CGPoint(x: stoveX, y: workstationY + 10)
+        stoveTop.zPosition = 1
         addChild(stoveTop)
     }
 
+    private func setupMixButton() {
+        mixButton = SKShapeNode(rectOf: CGSize(width: 150, height: 48), cornerRadius: 14)
+        mixButton.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.95)
+        mixButton.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        mixButton.lineWidth = 2.5
+        mixButton.position = CGPoint(x: mixerX, y: workstationY - 155)
+        mixButton.name = "mixButton"
+        mixButton.alpha = 0
+        mixButton.isHidden = true
+        mixButton.zPosition = 2
+
+        let iconTexture = SKTexture(imageNamed: "icon_whisk")
+        let icon = SKSpriteNode(texture: iconTexture)
+        icon.size = CGSize(width: 24, height: 24)
+        icon.position = CGPoint(x: -30, y: 0)
+        mixButton.addChild(icon)
+
+        mixLabel = SKLabelNode(text: "MIX!")
+        mixLabel.fontSize = 18
+        mixLabel.fontName = "AvenirNext-Bold"
+        mixLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        mixLabel.verticalAlignmentMode = .center
+        mixLabel.position = CGPoint(x: 10, y: 0)
+        mixButton.addChild(mixLabel)
+
+        addChild(mixButton)
+    }
+
     private func setupServeButton() {
-        serveButton = SKShapeNode(rectOf: CGSize(width: 160, height: 50), cornerRadius: 25)
-        serveButton.fillColor = UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1.0)
-        serveButton.strokeColor = UIColor(red: 0.2, green: 0.6, blue: 0.2, alpha: 1.0)
-        serveButton.lineWidth = 3
-        serveButton.position = CGPoint(x: kitchenCentreX, y: 50)
+        serveButton = SKShapeNode(rectOf: CGSize(width: 170, height: 50), cornerRadius: 14)
+        serveButton.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.95)
+        serveButton.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        serveButton.lineWidth = 2.5
+        serveButton.position = CGPoint(x: stoveX, y: workstationY - 155)
         serveButton.name = "serveButton"
         serveButton.alpha = 0
         serveButton.isHidden = true
+        serveButton.zPosition = 2
+
+        let iconTexture = SKTexture(imageNamed: "icon_serve")
+        let icon = SKSpriteNode(texture: iconTexture)
+        icon.size = CGSize(width: 26, height: 26)
+        icon.position = CGPoint(x: -38, y: 0)
+        serveButton.addChild(icon)
 
         serveLabel = SKLabelNode(text: "SERVE!")
         serveLabel.fontSize = 20
         serveLabel.fontName = "AvenirNext-Bold"
-        serveLabel.fontColor = .white
+        serveLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         serveLabel.verticalAlignmentMode = .center
+        serveLabel.position = CGPoint(x: 10, y: 0)
         serveButton.addChild(serveLabel)
 
         addChild(serveButton)
+    }
+
+    private func setupBinButtons() {
+        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .medium)
+        let trashImage = UIImage(systemName: "trash.fill", withConfiguration: config)!
+            .withTintColor(.systemRed, renderingMode: .alwaysOriginal)
+        let trashTexture = SKTexture(image: trashImage)
+
+        mixerBinButton = SKSpriteNode(texture: trashTexture)
+        mixerBinButton.size = CGSize(width: 30, height: 30)
+        mixerBinButton.position = CGPoint(x: mixerX + 90, y: workstationY + 60)
+        mixerBinButton.name = "mixerBin"
+        mixerBinButton.alpha = 0
+        mixerBinButton.isHidden = true
+        mixerBinButton.zPosition = 3
+        addChild(mixerBinButton)
+
+        panBinButton = SKSpriteNode(texture: trashTexture)
+        panBinButton.size = CGSize(width: 30, height: 30)
+        panBinButton.position = CGPoint(x: stoveX + 100, y: workstationY + 60)
+        panBinButton.name = "panBin"
+        panBinButton.alpha = 0
+        panBinButton.isHidden = true
+        panBinButton.zPosition = 3
+        addChild(panBinButton)
+    }
+
+    private func setupDora() {
+        let doraTexture = SKTexture(imageNamed: "dora")
+        let dora = SKSpriteNode(texture: doraTexture)
+        let doraHeight: CGFloat = 180
+        let scale = doraHeight / doraTexture.size().height
+        dora.size = CGSize(width: doraTexture.size().width * scale, height: doraHeight)
+        dora.position = CGPoint(x: kitchenCentreX, y: doraHeight / 2 + 10)
+        dora.zPosition = 1
+        addChild(dora)
     }
 
     private func setupRecipePanel() {
@@ -198,7 +311,6 @@ class KitchenScene: SKScene {
 
     private func seatPositionForSlot(_ index: Int) -> CGPoint {
         guard index < seatPositions.count else {
-            // Overflow — stack below the last seat
             let lastSeat = seatPositions.last ?? CGPoint(x: seatX, y: 100)
             return CGPoint(x: lastSeat.x, y: lastSeat.y - CGFloat(index - seatPositions.count + 1) * 100)
         }
@@ -226,8 +338,20 @@ class KitchenScene: SKScene {
         let location = touch.location(in: self)
         let tappedNodes = nodes(at: location)
 
-        // Check serve button
-        if stoveTop.isCooked {
+        // 1. Bin buttons (always available when visible)
+        for node in tappedNodes {
+            if node.name == "mixerBin" {
+                handleMixerBin()
+                return
+            }
+            if node.name == "panBin" {
+                handlePanBin()
+                return
+            }
+        }
+
+        // 2. Serve button
+        if gamePhase == .readyToServe || gamePhase == .burnt {
             for node in tappedNodes {
                 if node.name == "serveButton" || node.parent?.name == "serveButton" {
                     serveOrder()
@@ -236,7 +360,27 @@ class KitchenScene: SKScene {
             }
         }
 
-        // Check recipe panel
+        // 3. Mix button
+        if gamePhase == .addingIngredients && mixerNode.canMix {
+            for node in tappedNodes {
+                if node.name == "mixButton" || node.parent?.name == "mixButton" {
+                    startMixing()
+                    return
+                }
+            }
+        }
+
+        // 4. Mixer tap (pour batter to pan)
+        if gamePhase == .batterReady {
+            for node in tappedNodes {
+                if findMixerNode(in: node) {
+                    pourBatterToPan()
+                    return
+                }
+            }
+        }
+
+        // 5. Recipe panel
         for node in tappedNodes {
             if node.name?.starts(with: "recipeRow") == true || node.parent?.name?.starts(with: "recipeRow") == true || node.parent?.parent?.name?.starts(with: "recipeRow") == true {
                 recipePanel.handleTap(at: location)
@@ -248,48 +392,208 @@ class KitchenScene: SKScene {
             }
         }
 
-        // Check ingredient taps
-        for node in tappedNodes {
-            if let ingredientNode = findIngredientNode(in: node) {
-                handleIngredientTap(ingredientNode)
-                return
+        // 6. Ingredient taps
+        if gamePhase == .addingIngredients {
+            for node in tappedNodes {
+                if let ingredientNode = findIngredientNode(in: node) {
+                    handleIngredientTap(ingredientNode)
+                    return
+                }
             }
         }
     }
 
     private func findIngredientNode(in node: SKNode) -> IngredientNode? {
-        if let ingredientNode = node as? IngredientNode {
-            return ingredientNode
-        }
-        if let parent = node.parent as? IngredientNode {
-            return parent
-        }
+        if let ingredientNode = node as? IngredientNode { return ingredientNode }
+        if let parent = node.parent as? IngredientNode { return parent }
         return nil
     }
 
+    private func findMixerNode(in node: SKNode) -> Bool {
+        var current: SKNode? = node
+        while let n = current {
+            if n === mixerNode { return true }
+            current = n.parent
+        }
+        return false
+    }
+
+    // MARK: - Ingredient handling
+
     private func handleIngredientTap(_ ingredientNode: IngredientNode) {
-        guard !stoveTop.isCooking && !stoveTop.isCooked else { return }
-        guard let activeOrder = customerData.first?.order else { return }
+        guard gamePhase == .addingIngredients else { return }
+        guard customerData.first?.order != nil else { return }
 
         let ingredient = ingredientNode.ingredient
-        if stoveTop.currentIngredients.contains(ingredient) { return }
+        if mixerNode.currentIngredients.contains(ingredient) { return }
 
         ingredientNode.animatePop()
         ingredientNode.animateDimmed()
-        stoveTop.addIngredient(ingredient)
-        checkRecipeCompletion(for: activeOrder)
+        mixerNode.addIngredient(ingredient)
+
+        showMixerBin()
+
+        if mixerNode.canMix {
+            showMixButton()
+        }
     }
 
-    // MARK: - Cooking logic
+    // MARK: - Mixing
 
-    private func checkRecipeCompletion(for recipe: Recipe) {
-        let required = Set(recipe.requiredIngredients)
-        let placed = Set(stoveTop.currentIngredients)
+    private func startMixing() {
+        gamePhase = .mixing
+        hideMixButton()
 
-        if required.isSubset(of: placed) {
-            stoveTop.startCooking { [weak self] in
-                self?.showServeButton()
+        mixerNode.startMixing { [weak self] in
+            self?.onMixingComplete()
+        }
+    }
+
+    private func onMixingComplete() {
+        gamePhase = .batterReady
+
+        // Pulse the mixer to indicate "tap me"
+        mixerNode.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.scale(to: 1.08, duration: 0.4),
+            SKAction.scale(to: 1.0, duration: 0.4)
+        ])), withKey: "readyPulse")
+    }
+
+    // MARK: - Pour batter to pan
+
+    private func pourBatterToPan() {
+        mixerNode.removeAction(forKey: "readyPulse")
+        mixerNode.setScale(1.0)
+
+        let ingredients = mixerNode.pourBatter()
+        guard !ingredients.isEmpty else { return }
+
+        gamePhase = .cooking
+        hideMixerBin()
+
+        stoveTop.receiveBatter(
+            ingredients: ingredients,
+            cookingComplete: { [weak self] in
+                self?.onCookingComplete()
+            },
+            burnt: { [weak self] in
+                self?.onBurnt()
             }
+        )
+
+        showPanBin()
+    }
+
+    // MARK: - Cooking
+
+    private func onCookingComplete() {
+        gamePhase = .readyToServe
+        showServeButton()
+    }
+
+    private func onBurnt() {
+        gamePhase = .burnt
+        // Serve button stays visible — serving burnt food penalises
+    }
+
+    // MARK: - Serving
+
+    private func serveOrder() {
+        guard let result = stoveTop.tapToServe() else { return }
+
+        hideServeButton()
+        hidePanBin()
+
+        guard let activeOrder = customerData.first?.order else { return }
+        let requiredSet = Set(activeOrder.requiredIngredients)
+        let placedSet = Set(result.ingredients)
+        let isCorrectOrder = requiredSet == placedSet
+
+        if isCorrectOrder && !result.isBurnt {
+            customerNodes.first?.showCompleted()
+            scoreNode.increment()
+        } else {
+            customerNodes.first?.showRejected()
+            scoreNode.decrement()
+        }
+
+        run(SKAction.wait(forDuration: 1.5)) { [weak self] in
+            self?.resetForNextOrder()
+        }
+    }
+
+    // MARK: - Bin handling
+
+    private func handleMixerBin() {
+        guard !mixerNode.isEmpty else { return }
+        mixerNode.removeAction(forKey: "readyPulse")
+        mixerNode.setScale(1.0)
+        mixerNode.reset()
+        hideMixButton()
+        hideMixerBin()
+        resetIngredientShelf()
+        gamePhase = .addingIngredients
+    }
+
+    private func handlePanBin() {
+        guard stoveTop.hasContents else { return }
+        stoveTop.reset()
+        mixerNode.reset()
+        hideServeButton()
+        hidePanBin()
+        hideMixerBin()
+        resetIngredientShelf()
+        gamePhase = .addingIngredients
+    }
+
+    // MARK: - Reset
+
+    private func resetForNextOrder() {
+        stoveTop.reset()
+        mixerNode.reset()
+        hideMixButton()
+        hideServeButton()
+        hideMixerBin()
+        hidePanBin()
+        resetIngredientShelf()
+        gamePhase = .addingIngredients
+
+        guard let servedNode = customerNodes.first else { return }
+
+        servedNode.animateExit { [weak self] in
+            guard let self else { return }
+            servedNode.removeFromParent()
+            self.customerNodes.removeFirst()
+            self.customerData.removeFirst()
+            self.repositionCustomerStrip()
+            self.spawnCustomer()
+        }
+    }
+
+    private func resetIngredientShelf() {
+        for node in ingredientShelfNodes {
+            node.animateReset()
+        }
+    }
+
+    private func repositionCustomerStrip() {
+        for (index, node) in customerNodes.enumerated() {
+            let target = seatPositionForSlot(index)
+            node.run(SKAction.move(to: target, duration: 0.3))
+        }
+    }
+
+    // MARK: - Button visibility helpers
+
+    private func showMixButton() {
+        mixButton.isHidden = false
+        mixButton.run(SKAction.fadeIn(withDuration: 0.2))
+    }
+
+    private func hideMixButton() {
+        mixButton.removeAllActions()
+        mixButton.run(SKAction.fadeOut(withDuration: 0.2)) { [weak self] in
+            self?.mixButton.isHidden = true
         }
     }
 
@@ -303,43 +607,34 @@ class KitchenScene: SKScene {
         ])), withKey: "pulse")
     }
 
-    private func serveOrder() {
+    private func hideServeButton() {
         serveButton.removeAction(forKey: "pulse")
+        serveButton.setScale(1.0)
         serveButton.run(SKAction.fadeOut(withDuration: 0.2)) { [weak self] in
             self?.serveButton.isHidden = true
         }
+    }
 
-        customerNodes.first?.showCompleted()
-        scoreNode.increment()
+    private func showMixerBin() {
+        guard mixerBinButton.isHidden else { return }
+        mixerBinButton.isHidden = false
+        mixerBinButton.run(SKAction.fadeIn(withDuration: 0.2))
+    }
 
-        run(SKAction.wait(forDuration: 1.5)) { [weak self] in
-            self?.resetForNextOrder()
+    private func hideMixerBin() {
+        mixerBinButton.run(SKAction.fadeOut(withDuration: 0.2)) { [weak self] in
+            self?.mixerBinButton.isHidden = true
         }
     }
 
-    private func resetForNextOrder() {
-        stoveTop.reset()
-
-        for node in ingredientShelfNodes {
-            node.animateReset()
-        }
-
-        guard let servedNode = customerNodes.first else { return }
-
-        servedNode.animateExit { [weak self] in
-            guard let self = self else { return }
-            servedNode.removeFromParent()
-            self.customerNodes.removeFirst()
-            self.customerData.removeFirst()
-            self.repositionCustomerStrip()
-            self.spawnCustomer()
-        }
+    private func showPanBin() {
+        panBinButton.isHidden = false
+        panBinButton.run(SKAction.fadeIn(withDuration: 0.2))
     }
 
-    private func repositionCustomerStrip() {
-        for (index, node) in customerNodes.enumerated() {
-            let target = seatPositionForSlot(index)
-            node.run(SKAction.move(to: target, duration: 0.3))
+    private func hidePanBin() {
+        panBinButton.run(SKAction.fadeOut(withDuration: 0.2)) { [weak self] in
+            self?.panBinButton.isHidden = true
         }
     }
 }

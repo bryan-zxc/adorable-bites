@@ -62,6 +62,9 @@ ASSETS = [
     ("burnt_food", "generic charred blackened burnt food, dark brown and black, no pan, transparent background, top-down view"),
     # Furniture
     ("kitchen_counter", "large rectangular clean kitchen counter surface, light marble or light wood, no objects on it, top-down view"),
+    # Button icons (small, simple, icon-style — not detailed images)
+    ("icon_whisk", "tiny cute cartoon whisk icon, simple minimal design, small icon size, no background"),
+    ("icon_serve", "tiny cute cartoon serving cloche dome icon, simple minimal design, small icon size, no background"),
     # Dishes
     ("pancakes", "stack of pancakes with syrup on a plate"),
     # Customer animals (head/portrait only)
@@ -124,6 +127,10 @@ def generate_asset(name: str, description: str) -> None:
             raw = BytesIO(part.inline_data.data)
             image = Image.open(raw)
             image = remove_green_background(image)
+            bbox = image.getbbox()
+            if bbox:
+                image = image.crop(bbox)
+                print(f"  Cropped from 1024x1024 to {image.size[0]}x{image.size[1]}")
             save_to_asset_catalogue(name, image)
             return
 

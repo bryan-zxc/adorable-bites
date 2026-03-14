@@ -69,6 +69,10 @@ def main() -> None:
             raw = BytesIO(part.inline_data.data)
             pil_image = Image.open(raw)
             result = remove_green_background(pil_image)
+            bbox = result.getbbox()
+            if bbox:
+                result = result.crop(bbox)
+                print(f"Cropped to {result.size[0]}x{result.size[1]}")
             result.save(image_path)
             print(f"Saved to: {image_path}")
             return

@@ -40,4 +40,23 @@ class ScoreNode: SKNode {
         ])
         label.run(bounce)
     }
+
+    func decrement(by amount: Int = 1) {
+        score -= amount
+        label.text = "Score: \(score)"
+
+        let originalColour = label.fontColor
+        let flash = SKAction.sequence([
+            SKAction.run { [weak self] in self?.label.fontColor = .red },
+            SKAction.wait(forDuration: 0.3),
+            SKAction.run { [weak self] in self?.label.fontColor = originalColour }
+        ])
+        let shake = SKAction.sequence([
+            SKAction.moveBy(x: -5, y: 0, duration: 0.05),
+            SKAction.moveBy(x: 10, y: 0, duration: 0.05),
+            SKAction.moveBy(x: -10, y: 0, duration: 0.05),
+            SKAction.moveBy(x: 5, y: 0, duration: 0.05)
+        ])
+        label.run(SKAction.group([flash, shake]))
+    }
 }

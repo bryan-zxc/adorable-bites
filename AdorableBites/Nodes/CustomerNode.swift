@@ -99,6 +99,34 @@ class CustomerNode: SKNode {
         run(SKAction.repeat(bounce, count: 3))
     }
 
+    func showRejected() {
+        orderSprite.run(SKAction.fadeAlpha(to: 0.2, duration: 0.2))
+
+        let cross = SKLabelNode(text: "✗")
+        cross.fontSize = 40
+        cross.fontName = "AvenirNext-Bold"
+        cross.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
+        cross.verticalAlignmentMode = .center
+        cross.horizontalAlignmentMode = .center
+        cross.position = .zero
+        cross.zPosition = 1
+        cross.setScale(0)
+        speechBubble.addChild(cross)
+
+        cross.run(SKAction.sequence([
+            SKAction.scale(to: 1.3, duration: 0.15),
+            SKAction.scale(to: 1.0, duration: 0.1)
+        ]))
+
+        let shake = SKAction.sequence([
+            SKAction.moveBy(x: -8, y: 0, duration: 0.08),
+            SKAction.moveBy(x: 16, y: 0, duration: 0.08),
+            SKAction.moveBy(x: -16, y: 0, duration: 0.08),
+            SKAction.moveBy(x: 8, y: 0, duration: 0.08)
+        ])
+        run(SKAction.repeat(shake, count: 2))
+    }
+
     func animateExit(completion: @escaping () -> Void) {
         run(SKAction.sequence([
             SKAction.group([

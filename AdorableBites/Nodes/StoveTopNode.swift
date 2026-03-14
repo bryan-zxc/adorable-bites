@@ -2,20 +2,29 @@ import SpriteKit
 
 class StoveTopNode: SKNode {
 
+    enum PanState {
+        case empty
+        case rawBatter
+        case cooking
+        case cooked
+        case burnt
+    }
+
+    private(set) var panState: PanState = .empty
+    private var storedIngredients: [Ingredient] = []
     private let cooktopSprite: SKSpriteNode
     private let panSprite: SKSpriteNode
+    private var contentsOverlay: SKSpriteNode?
     private let progressBar: SKShapeNode
     private var progressFill: SKShapeNode
-    private var placedIngredients: [Ingredient] = []
-    private var ingredientNodes: [SKNode] = []
     private let stoveSize: CGSize
-    private let cookingDuration: TimeInterval = 4.0
     private var glowRing: SKShapeNode?
 
-    var isCooking = false
-    var isCooked = false
+    let cookingDuration: TimeInterval = 4.0
+    let burnGracePeriod: TimeInterval = 5.0
 
-    var currentIngredients: [Ingredient] { placedIngredients }
+    var currentIngredients: [Ingredient] { storedIngredients }
+    var hasContents: Bool { panState != .empty }
 
     init(size: CGSize = CGSize(width: 200, height: 200)) {
         self.stoveSize = size
@@ -28,7 +37,7 @@ class StoveTopNode: SKNode {
         panSprite = SKSpriteNode(texture: panTexture)
         let panScale = size.width * 0.55 / panTexture.size().width
         panSprite.size = CGSize(width: panTexture.size().width * panScale, height: panTexture.size().height * panScale)
-        panSprite.position = CGPoint(x: 0, y: 5)
+        panSprite.position = CGPoint(x: 0, y: -8)
         panSprite.zPosition = 1
 
         let barWidth: CGFloat = size.width * 0.7
@@ -58,57 +67,30 @@ class StoveTopNode: SKNode {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func addIngredient(_ ingredient: Ingredient) {
-        guard !isCooking && !isCooked else { return }
+    // MARK: - Batter flow
 
-        placedIngredients.append(ingredient)
+    func receiveBatter(ingredients: [Ingredient], cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
+        guard panState == .empty else { return }
+        storedIngredients = ingredients
+        panState = .rawBatter
+        showOverlay(imageNamed: "raw_batter_in_pan")
 
-        let texture = SKTexture(imageNamed: ingredient.imageName)
-        let sprite = SKSpriteNode(texture: texture)
-        sprite.size = CGSize(width: 40, height: 40)
-        sprite.zPosition = 2
-
-        sprite.setScale(0)
-        sprite.run(SKAction.sequence([
-            SKAction.scale(to: 1.3, duration: 0.15),
-            SKAction.scale(to: 1.0, duration: 0.1)
+        // Brief pause to show raw batter, then auto-start cooking
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.5),
+            SKAction.run { [weak self] in
+                self?.startCooking(cookingComplete: cookingComplete, burnt: burnt)
+            }
         ]))
-
-        addChild(sprite)
-        ingredientNodes.append(sprite)
-        recentreIngredients()
     }
 
-    func removeIngredient(_ ingredient: Ingredient) {
-        guard !isCooking && !isCooked else { return }
-        guard let index = placedIngredients.firstIndex(of: ingredient) else { return }
-
-        placedIngredients.remove(at: index)
-        let node = ingredientNodes.remove(at: index)
-        node.removeFromParent()
-        recentreIngredients()
-    }
-
-    private func recentreIngredients() {
-        let spacing: CGFloat = 45
-        let totalWidth = spacing * CGFloat(ingredientNodes.count - 1)
-        let startX = -totalWidth / 2
-        for (i, node) in ingredientNodes.enumerated() {
-            node.position = CGPoint(x: startX + spacing * CGFloat(i), y: 5)
-        }
-    }
-
-    func startCooking(completion: @escaping () -> Void) {
-        guard !isCooking else { return }
-        isCooking = true
-
-        for node in ingredientNodes {
-            node.run(SKAction.fadeOut(withDuration: 0.3))
-        }
+    private func startCooking(cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
+        guard panState == .rawBatter else { return }
+        panState = .cooking
 
         progressBar.alpha = 1.0
 
-        // Pulsing glow ring around the cooktop
+        // Pulsing glow ring
         let ring = SKShapeNode(circleOfRadius: stoveSize.width * 0.35)
         ring.fillColor = .clear
         ring.strokeColor = UIColor(red: 1.0, green: 0.4, blue: 0.1, alpha: 0.8)
@@ -132,9 +114,10 @@ class StoveTopNode: SKNode {
         ])
         run(SKAction.repeatForever(steam), withKey: "steamAnimation")
 
+        // Progress bar animation
         let barWidth = stoveSize.width * 0.7
         let fillAction = SKAction.customAction(withDuration: cookingDuration) { [weak self] _, elapsed in
-            guard let self = self else { return }
+            guard let self else { return }
             let progress = elapsed / self.cookingDuration
             let fillWidth = barWidth * progress
             self.progressFill.removeFromParent()
@@ -148,14 +131,100 @@ class StoveTopNode: SKNode {
         }
 
         run(SKAction.sequence([fillAction, SKAction.run { [weak self] in
-            self?.isCooking = false
-            self?.isCooked = true
-            self?.glowRing?.removeAllActions()
-            self?.glowRing?.removeFromParent()
-            self?.glowRing = nil
-            self?.removeAction(forKey: "steamAnimation")
-            completion()
+            self?.onCookingComplete(burnt: burnt)
+            cookingComplete()
         }]))
+    }
+
+    private func onCookingComplete(burnt: @escaping () -> Void) {
+        panState = .cooked
+        glowRing?.removeAllActions()
+        glowRing?.removeFromParent()
+        glowRing = nil
+        removeAction(forKey: "steamAnimation")
+
+        showOverlay(imageNamed: "finished_pancake_in_pan")
+
+        // Burn countdown bar — starts full green, drains to empty red
+        let barWidth = stoveSize.width * 0.7
+        progressFill.removeFromParent()
+        let fullFill = SKShapeNode(rectOf: CGSize(width: barWidth, height: 10), cornerRadius: 5)
+        fullFill.fillColor = UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1.0)
+        fullFill.strokeColor = .clear
+        fullFill.position = CGPoint(x: 0, y: 0)
+        progressFill = fullFill
+        progressBar.addChild(fullFill)
+        progressBar.alpha = 1.0
+
+        let burnCountdown = SKAction.customAction(withDuration: burnGracePeriod) { [weak self] _, elapsed in
+            guard let self else { return }
+            let remaining = 1.0 - elapsed / self.burnGracePeriod
+            let fillWidth = barWidth * remaining
+            self.progressFill.removeFromParent()
+
+            let newFill = SKShapeNode(rectOf: CGSize(width: fillWidth, height: 10), cornerRadius: 5)
+            // Colour shifts from green to red as time runs out
+            let red = min(1.0, 2.0 * (1.0 - remaining))
+            let green = min(1.0, 2.0 * remaining)
+            newFill.fillColor = UIColor(red: red, green: green, blue: 0.1, alpha: 1.0)
+            newFill.strokeColor = .clear
+            newFill.position = CGPoint(x: -barWidth / 2 * (1.0 - remaining), y: 0)
+            self.progressFill = newFill
+            self.progressBar.addChild(newFill)
+        }
+
+        run(SKAction.sequence([
+            burnCountdown,
+            SKAction.run { [weak self] in
+                guard self?.panState == .cooked else { return }
+                self?.panState = .burnt
+                self?.progressBar.run(SKAction.fadeOut(withDuration: 0.2))
+                self?.showOverlay(imageNamed: "burnt_food")
+                self?.run(SKAction.sequence([
+                    SKAction.run { [weak self] in self?.emitSteam() },
+                    SKAction.wait(forDuration: 0.3),
+                    SKAction.run { [weak self] in self?.emitSteam() },
+                    SKAction.wait(forDuration: 0.3),
+                    SKAction.run { [weak self] in self?.emitSteam() }
+                ]))
+                burnt()
+            }
+        ]), withKey: "burnTimer")
+    }
+
+    func tapToServe() -> (ingredients: [Ingredient], isBurnt: Bool)? {
+        guard panState == .cooked || panState == .burnt else { return nil }
+        let isBurnt = panState == .burnt
+        let ingredients = storedIngredients
+        removeAction(forKey: "burnTimer")
+        reset()
+        return (ingredients: ingredients, isBurnt: isBurnt)
+    }
+
+    func reset() {
+        removeAllActions()
+        panState = .empty
+        storedIngredients.removeAll()
+        contentsOverlay?.removeFromParent()
+        contentsOverlay = nil
+        progressBar.alpha = 0
+        glowRing?.removeAllActions()
+        glowRing?.removeFromParent()
+        glowRing = nil
+    }
+
+    // MARK: - Helpers
+
+    private func showOverlay(imageNamed: String) {
+        contentsOverlay?.removeFromParent()
+        let texture = SKTexture(imageNamed: imageNamed)
+        let overlay = SKSpriteNode(texture: texture)
+        let panRadius = stoveSize.width * 0.22
+        overlay.size = CGSize(width: panRadius * 2, height: panRadius * 2)
+        overlay.position = CGPoint(x: 0, y: 15)
+        overlay.zPosition = 2
+        addChild(overlay)
+        contentsOverlay = overlay
     }
 
     private func emitSteam() {
@@ -169,25 +238,5 @@ class StoveTopNode: SKNode {
         let rise = SKAction.moveBy(x: CGFloat.random(in: -15...15), y: 50, duration: 1.0)
         let fade = SKAction.fadeOut(withDuration: 1.0)
         steam.run(SKAction.sequence([SKAction.group([rise, fade]), SKAction.removeFromParent()]))
-    }
-
-    func reset() {
-        isCooking = false
-        isCooked = false
-        placedIngredients.removeAll()
-
-        for node in ingredientNodes {
-            node.run(SKAction.sequence([
-                SKAction.fadeOut(withDuration: 0.2),
-                SKAction.removeFromParent()
-            ]))
-        }
-        ingredientNodes.removeAll()
-
-        progressBar.alpha = 0
-        glowRing?.removeAllActions()
-        glowRing?.removeFromParent()
-        glowRing = nil
-        removeAction(forKey: "steamAnimation")
     }
 }

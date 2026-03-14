@@ -24,9 +24,8 @@ A cooking/restaurant game where:
 - **Target device:** iPad mini
 - **IDE:** Xcode
 
+## Build & Preview
+- **Always use the `/build-and-preview` skill** after making changes to the app — to build, run, and visually verify the result
+
 ## Art Generation
-- **Always use the Python scripts in `scripts/` to generate or edit game art** — never generate images any other way
-- `uv run scripts/generate_art.py` — generate all assets, or pass a name to generate one (e.g. `uv run scripts/generate_art.py frying_pan`)
-- `uv run scripts/edit_art.py <image_path> "<prompt>"` — edit an existing image in place
-- These scripts use Google Gemini via the API key in `scripts/.env.local`
-- New assets must be added to the `ASSETS` list in `generate_art.py` before generating
+- **Always use the `/generate-art` skill** to generate or edit game art — never generate images any other way
