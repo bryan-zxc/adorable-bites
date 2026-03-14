@@ -11,9 +11,10 @@ class QuizNode: SKNode {
     private var onWrong: (() -> Void)?
 
     init(sceneSize: CGSize) {
-        // Generate question: X + 1 where X is 0-9
+        // Generate question: randomly either "X + 1" or "1 + X"
         let number = Int.random(in: 0...9)
         correctAnswer = number + 1
+        let questionText = Bool.random() ? "What is \(number) + 1?" : "What is 1 + \(number)?"
 
         // Dimmed overlay
         background = SKShapeNode(rectOf: sceneSize)
@@ -61,7 +62,7 @@ class QuizNode: SKNode {
         addChild(card)
 
         // Question
-        let questionLabel = SKLabelNode(text: "What is \(number) + 1?")
+        let questionLabel = SKLabelNode(text: questionText)
         questionLabel.fontSize = 30
         questionLabel.fontName = "AvenirNext-Bold"
         questionLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
