@@ -41,22 +41,25 @@ class IngredientNode: SKNode {
         isPickedUp = true
         originalSpritePosition = sprite.position
 
-        // Lift sprite above shelf
-        sprite.run(SKAction.moveBy(x: 0, y: 30, duration: 0.2))
+        // Scale up and drop down slightly
+        sprite.run(SKAction.group([
+            SKAction.scale(to: 1.4, duration: 0.2),
+            SKAction.moveBy(x: 0, y: -15, duration: 0.2)
+        ]))
 
         // Gentle bobbing
         let bob = SKAction.sequence([
-            SKAction.moveBy(x: 0, y: 5, duration: 0.5),
-            SKAction.moveBy(x: 0, y: -5, duration: 0.5)
+            SKAction.moveBy(x: 0, y: 4, duration: 0.5),
+            SKAction.moveBy(x: 0, y: -4, duration: 0.5)
         ])
         sprite.run(SKAction.repeatForever(bob), withKey: "bob")
 
-        // Show X button — red circle with white X, top-right of floated sprite
+        // Show X button — red circle with white X, top-right of scaled sprite
         let bg = SKShapeNode(circleOfRadius: 12)
         bg.fillColor = UIColor(red: 0.85, green: 0.2, blue: 0.2, alpha: 1.0)
         bg.strokeColor = .white
         bg.lineWidth = 2
-        bg.position = CGPoint(x: sprite.size.width / 2, y: 30 + sprite.size.height / 2)
+        bg.position = CGPoint(x: sprite.size.width * 0.7, y: -15 + sprite.size.height * 0.7)
         bg.zPosition = 5
         bg.name = "ingredientClose"
 
@@ -81,7 +84,10 @@ class IngredientNode: SKNode {
         isPickedUp = false
 
         sprite.removeAction(forKey: "bob")
-        sprite.run(SKAction.move(to: originalSpritePosition, duration: 0.2))
+        sprite.run(SKAction.group([
+            SKAction.move(to: originalSpritePosition, duration: 0.2),
+            SKAction.scale(to: 1.0, duration: 0.2)
+        ]))
         sprite.colorBlendFactor = 0
 
         // Remove the circle background (parent of the label)
