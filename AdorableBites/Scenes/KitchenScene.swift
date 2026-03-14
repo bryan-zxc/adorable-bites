@@ -55,7 +55,7 @@ class KitchenScene: SKScene {
     private var ingredientShelfNodes: [IngredientNode] = []
     private var mixerNode: MixerNode!
     private var stoveTop: StoveTopNode!
-    private var scoreNode: ScoreNode!
+    private var hudNode: HudNode!
     private var recipePanel: RecipePanelNode!
 
     // Quiz and pickup
@@ -76,6 +76,10 @@ class KitchenScene: SKScene {
 
     // Dish sprites on bench (keyed by customer node)
     private var benchDishSprites: [ObjectIdentifier: SKSpriteNode] = [:]
+
+    // Money on bench — keyed by seat index, value is (sprite, payment amount)
+    private var benchMoneySprites: [Int: (sprite: SKSpriteNode, payment: Int)] = [:]
+    private var blockedSeats: Set<Int> = []
     private let totalPlates = 3  // TODO: change back to 5 after testing
     private var platesRemaining = 3
     private var customersServed = 0
@@ -132,10 +136,10 @@ class KitchenScene: SKScene {
     private func setupScoreNode() {
         let seatLeftEdge = seatX - 28
         let scoreWidth = benchRightEdge - seatLeftEdge
-        scoreNode = ScoreNode(width: scoreWidth)
-        scoreNode.position = CGPoint(x: (seatLeftEdge + benchRightEdge) / 2, y: size.height - 35)
-        scoreNode.zPosition = 2
-        gameLayer.addChild(scoreNode)
+        hudNode = HudNode(width: scoreWidth)
+        hudNode.position = CGPoint(x: (seatLeftEdge + benchRightEdge) / 2, y: size.height - 50)
+        hudNode.zPosition = 2
+        gameLayer.addChild(hudNode)
     }
 
     private func setupBench() {
@@ -309,9 +313,17 @@ class KitchenScene: SKScene {
     }
 
     private var canSpawnMore: Bool { totalCustomersSpawned < seatCount }
+    private var hasAvailableSeat: Bool {
+        // A seat is available if not occupied by a customer and not blocked by money
+        let occupiedCount = customerNodes.count
+        for i in occupiedCount..<seatCount {
+            if !blockedSeats.contains(i) { return true }
+        }
+        return false
+    }
 
     private func spawnCustomer() {
-        guard canSpawnMore else { return }
+        guard canSpawnMore && hasAvailableSeat else { return }
         totalCustomersSpawned += 1
         let customer = KitchenScene.customerPool.randomElement()!
         let node = CustomerNode(customer: customer)
@@ -336,7 +348,7 @@ class KitchenScene: SKScene {
         guard let node, let index = customerNodes.firstIndex(where: { $0 === node }) else { return }
 
         let customer = customerData[index]
-        scoreNode.decrement(by: customer.order.basePoints)
+        hudNode.removeSnowflakes(customer.order.basePoints)
         customersServed += 1
 
         node.showRejected()
@@ -391,7 +403,13 @@ class KitchenScene: SKScene {
             }
         }
 
-        // 0a. Next button (game end screen)
+        // 0a. Money collection on bench
+        if let seatIndex = findMoneyTap(in: tappedNodes) {
+            collectMoney(at: seatIndex)
+            return
+        }
+
+        // 0b. Next button (game end screen)
         for node in tappedNodes {
             if node.name == "nextButton" {
                 restartGame()
@@ -530,11 +548,13 @@ class KitchenScene: SKScene {
         quiz.configure(
             onCorrect: { [weak self] in
                 guard let self, let node = self.pendingIngredientNode else { return }
+                self.hudNode.addSnowflakes(1)
                 self.enterPickupMode(node)
                 self.activeQuiz = nil
                 self.pendingIngredientNode = nil
             },
             onWrong: { [weak self] in
+                self?.hudNode.removeSnowflakes(1)
                 self?.activeQuiz = nil
                 self?.pendingIngredientNode = nil
             }
@@ -664,21 +684,23 @@ class KitchenScene: SKScene {
         if isCorrectOrder && !result.isBurnt {
             let bonus = customerNodes.first?.isInBonusWindow == true ? 1 : 0
             customerNodes.first?.showCompleted()
-            scoreNode.increment(by: activeOrder.basePoints + bonus)
+
+            // Store payment amount for when money is collected later
+            let payment = activeOrder.basePoints + bonus
 
             // Place dish on bench in front of customer
             if let customerNode = customerNodes.first {
                 placeDishOnBench(for: customerNode, imageName: activeOrder.imageName)
             }
 
-            // Customer stays to eat — set up eating callback then start eating
+            // Customer stays to eat — when done, place money on bench
             customerNodes.first?.onFinishedEating = { [weak self] in
-                self?.handleCustomerFinishedEating()
+                self?.handleCustomerFinishedEating(payment: payment)
             }
             customerNodes.first?.startEating(duration: 5.0)
         } else {
             customerNodes.first?.showRejected()
-            scoreNode.decrement(by: activeOrder.basePoints)
+            hudNode.removeSnowflakes(activeOrder.basePoints)
 
             // Wrong/burnt — customer leaves after brief delay
             run(SKAction.wait(forDuration: 1.5)) { [weak self] in
@@ -695,11 +717,16 @@ class KitchenScene: SKScene {
         gamePhase = .addingIngredients
     }
 
-    private func handleCustomerFinishedEating() {
+    private func handleCustomerFinishedEating(payment: Int = 0) {
         // Remove dish from bench and add dirty dish to sink
         if let customerNode = customerNodes.first {
             removeDishFromBench(for: customerNode)
             addDirtyDish()
+
+            // Place money on bench where customer was sitting
+            if payment > 0 {
+                placeMoneyOnBench(seatPosition: customerNode.position, payment: payment)
+            }
         }
         removeFirstCustomerAndContinue()
     }
@@ -725,9 +752,20 @@ class KitchenScene: SKScene {
     }
 
     private func checkGameEnd() {
-        // Game ends when bench is empty
-        if customerNodes.isEmpty {
+        let hasMoney = !benchMoneySprites.isEmpty
+        let hasCustomers = !customerNodes.isEmpty
+
+        // Condition 1: no customers and no money on bench → all done
+        if !hasCustomers && !hasMoney {
             handleGameOver()
+            return
+        }
+
+        // Condition 2: no plates, no eating customers, no money, but someone waiting
+        let hasEatingCustomers = customerNodes.contains { $0.isEating }
+        if platesRemaining <= 0 && !hasEatingCustomers && !hasMoney && hasCustomers {
+            handleGameOver()
+            return
         }
     }
 
@@ -800,11 +838,8 @@ class KitchenScene: SKScene {
     }
 
     private func showUnservedPopup(count: Int, completion: @escaping () -> Void) {
-        // Deduct points for unserved customers
-        let penalty = count
-        for _ in 0..<penalty {
-            scoreNode.decrement()
-        }
+        // Deduct snowflakes for unserved customers
+        hudNode.removeSnowflakes(count)
 
         // Show all unserved customers with crosses
         for node in customerNodes {
@@ -839,7 +874,7 @@ class KitchenScene: SKScene {
         title.zPosition = 87
         addChild(title)
 
-        let detail = SKLabelNode(text: "\(count) customer\(count == 1 ? "" : "s") left hungry  −\(penalty) points")
+        let detail = SKLabelNode(text: "\(count) customer\(count == 1 ? "" : "s") left hungry  −\(count) snowflakes")
         detail.fontSize = 20
         detail.fontName = "AvenirNext-Medium"
         detail.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
@@ -863,8 +898,9 @@ class KitchenScene: SKScene {
     }
 
     private func showGameEndScreen() {
-        let finalScore = scoreNode.currentScore
-        let isPositive = finalScore > 0
+        let finalDollars = hudNode.dollars
+        let finalSnowflakes = hudNode.snowflakes
+        let messageText = finalDollars > 0 ? "Congratulations!" : "Better luck next time!"
 
         // Dim overlay
         let overlay = SKShapeNode(rectOf: size)
@@ -875,7 +911,7 @@ class KitchenScene: SKScene {
         addChild(overlay)
 
         // Card
-        let card = SKShapeNode(rectOf: CGSize(width: 450, height: 400), cornerRadius: 24)
+        let card = SKShapeNode(rectOf: CGSize(width: 450, height: 420), cornerRadius: 24)
         card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
         card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
         card.lineWidth = 3
@@ -886,34 +922,56 @@ class KitchenScene: SKScene {
         // Dora
         let doraTexture = SKTexture(imageNamed: "dora")
         let dora = SKSpriteNode(texture: doraTexture)
-        let doraHeight: CGFloat = 200
+        let doraHeight: CGFloat = 180
         let doraScale = doraHeight / doraTexture.size().height
         dora.size = CGSize(width: doraTexture.size().width * doraScale, height: doraHeight)
-        dora.position = CGPoint(x: size.width / 2, y: size.height / 2 + 60)
+        dora.position = CGPoint(x: size.width / 2, y: size.height / 2 + 70)
         dora.zPosition = 92
         addChild(dora)
 
-        // Message depends on score
-        let messageText = isPositive ? "Congratulations!" : "Better luck next time!"
+        // Message
         let message = SKLabelNode(text: messageText)
-        message.fontSize = 32
+        message.fontSize = 30
         message.fontName = "AvenirNext-Bold"
         message.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         message.verticalAlignmentMode = .center
-        message.position = CGPoint(x: size.width / 2, y: size.height / 2 - 60)
+        message.position = CGPoint(x: size.width / 2, y: size.height / 2 - 45)
         message.zPosition = 92
         addChild(message)
 
-        // Score
-        let scoreText = isPositive ? "You scored \(finalScore)!" : "You got \(finalScore) — you can do better!"
-        let scoreLabel = SKLabelNode(text: scoreText)
-        scoreLabel.fontSize = 22
-        scoreLabel.fontName = "AvenirNext-Bold"
-        scoreLabel.fontColor = UIColor(red: 0.5, green: 0.35, blue: 0.15, alpha: 1.0)
-        scoreLabel.verticalAlignmentMode = .center
-        scoreLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 100)
-        scoreLabel.zPosition = 92
-        addChild(scoreLabel)
+        // Money earned
+        let moneyIcon = SKSpriteNode(texture: SKTexture(imageNamed: "money"))
+        moneyIcon.size = CGSize(width: 24, height: 24)
+        moneyIcon.position = CGPoint(x: size.width / 2 - 50, y: size.height / 2 - 85)
+        moneyIcon.zPosition = 92
+        addChild(moneyIcon)
+
+        let moneyResult = SKLabelNode(text: "$\(finalDollars)")
+        moneyResult.fontSize = 22
+        moneyResult.fontName = "AvenirNext-Bold"
+        moneyResult.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        moneyResult.horizontalAlignmentMode = .left
+        moneyResult.verticalAlignmentMode = .center
+        moneyResult.position = CGPoint(x: size.width / 2 - 30, y: size.height / 2 - 85)
+        moneyResult.zPosition = 92
+        addChild(moneyResult)
+
+        // Snowflakes earned
+        let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
+        snowIcon.size = CGSize(width: 24, height: 24)
+        snowIcon.position = CGPoint(x: size.width / 2 - 50, y: size.height / 2 - 115)
+        snowIcon.zPosition = 92
+        addChild(snowIcon)
+
+        let snowResult = SKLabelNode(text: "\(finalSnowflakes)")
+        snowResult.fontSize = 22
+        snowResult.fontName = "AvenirNext-Bold"
+        snowResult.fontColor = UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 1.0)
+        snowResult.horizontalAlignmentMode = .left
+        snowResult.verticalAlignmentMode = .center
+        snowResult.position = CGPoint(x: size.width / 2 - 30, y: size.height / 2 - 115)
+        snowResult.zPosition = 92
+        addChild(snowResult)
 
         // Play Again button
         let nextBtn = SKShapeNode(rectOf: CGSize(width: 160, height: 50), cornerRadius: 14)
@@ -948,6 +1006,8 @@ class KitchenScene: SKScene {
         dirtyDishSprites.removeAll()
         dirtyDishCount = 0
         benchDishSprites.removeAll()
+        benchMoneySprites.removeAll()
+        blockedSeats.removeAll()
         platesRemaining = totalPlates
         customersServed = 0
         totalCustomersSpawned = 0
@@ -1021,6 +1081,70 @@ class KitchenScene: SKScene {
             ]))
             benchDishSprites.removeValue(forKey: key)
         }
+    }
+
+    // MARK: - Money on bench
+
+    private func placeMoneyOnBench(seatPosition: CGPoint, payment: Int) {
+        // Find which seat index this position corresponds to
+        guard let seatIndex = seatPositions.firstIndex(where: { $0 == seatPosition }) else { return }
+
+        let texture = SKTexture(imageNamed: "money")
+        let money = SKSpriteNode(texture: texture)
+        money.size = CGSize(width: 60, height: 60)
+        money.position = CGPoint(x: benchLeftEdge + benchWidth / 2, y: seatPosition.y)
+        money.zPosition = 3
+        money.name = "benchMoney_\(seatIndex)"
+        gameLayer.addChild(money)
+
+        // Pop in animation
+        money.setScale(0)
+        money.run(SKAction.sequence([
+            SKAction.scale(to: 1.2, duration: 0.15),
+            SKAction.scale(to: 1.0, duration: 0.1)
+        ]))
+
+        benchMoneySprites[seatIndex] = (sprite: money, payment: payment)
+        blockedSeats.insert(seatIndex)
+    }
+
+    private func collectMoney(at seatIndex: Int) {
+        guard let moneyInfo = benchMoneySprites[seatIndex] else { return }
+
+        let sprite = moneyInfo.sprite
+        let payment = moneyInfo.payment
+
+        // Fly money to HUD position
+        let hudPosition = hudNode.position
+        let flyTo = SKAction.move(to: CGPoint(x: hudPosition.x + 30, y: hudPosition.y + 20), duration: 0.4)
+        let shrink = SKAction.scale(to: 0.3, duration: 0.4)
+
+        sprite.run(SKAction.sequence([
+            SKAction.group([flyTo, shrink]),
+            SKAction.run { [weak self] in
+                self?.hudNode.addDollars(payment)
+            },
+            SKAction.removeFromParent()
+        ]))
+
+        benchMoneySprites.removeValue(forKey: seatIndex)
+        blockedSeats.remove(seatIndex)
+
+        checkGameEnd()
+    }
+
+    private func findMoneyTap(in tappedNodes: [SKNode]) -> Int? {
+        for node in tappedNodes {
+            if let name = node.name, name.starts(with: "benchMoney_") {
+                let indexStr = name.replacingOccurrences(of: "benchMoney_", with: "")
+                return Int(indexStr)
+            }
+            if let parentName = node.parent?.name, parentName.starts(with: "benchMoney_") {
+                let indexStr = parentName.replacingOccurrences(of: "benchMoney_", with: "")
+                return Int(indexStr)
+            }
+        }
+        return nil
     }
 
     // MARK: - Dirty dish stack

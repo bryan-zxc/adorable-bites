@@ -66,6 +66,9 @@ ASSETS = [
     ("plate", "single clean white dinner plate, top-down view, simple round plate, no food on it"),
     ("sink", "kitchen sink basin, top-down view, simple stainless steel or ceramic, empty, no taps"),
     ("dirty_plate", "single used dirty plate with food crumbs and sauce smears, top-down view, simple round plate, no knife, no fork, no cutlery, no utensils"),
+    # Currency
+    ("money", "cute small pile of gold coins, game art style, simple clean design, top-down view"),
+    ("snowflake", "single cute sparkly snowflake, Frozen Elsa themed, light blue and white, ice crystal design"),
     # Button icons (small, simple, icon-style — not detailed images)
     ("icon_whisk", "tiny cute cartoon whisk icon, simple minimal design, small icon size, no background"),
     ("icon_serve", "tiny cute cartoon serving cloche dome icon, simple minimal design, small icon size, no background"),
