@@ -27,5 +27,8 @@ A cooking/restaurant game where:
 ## Build & Preview
 - **Always use the `/build-and-preview` skill** after making changes to the app — to build, run, and visually verify the result
 
+## Workflow
+- **Always plan before acting** — for non-trivial changes, enter plan mode and get user approval before writing code
+
 ## Art Generation
 - **Always use the `/generate-art` skill** to generate or edit game art — never generate images any other way

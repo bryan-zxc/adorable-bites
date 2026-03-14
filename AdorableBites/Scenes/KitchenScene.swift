@@ -30,7 +30,8 @@ class KitchenScene: SKScene {
     static let pancakeRecipe = Recipe(
         name: "Pancakes",
         imageName: "pancakes",
-        requiredIngredients: [flour, egg, milk]
+        requiredIngredients: [flour, egg, milk],
+        basePoints: 1
     )
 
     static let allRecipes = [pancakeRecipe]
@@ -348,8 +349,42 @@ class KitchenScene: SKScene {
         addChild(node)
         node.animateEntrance()
 
+        // Start customer timer
+        node.onTimerExpired = { [weak self, weak node] in
+            self?.handleCustomerLeft(node: node)
+        }
+        node.startTimer(duration: customer.order.waitTime)
+
         customerNodes.append(node)
         customerData.append(customer)
+    }
+
+    private func handleCustomerLeft(node: CustomerNode?) {
+        guard let node, let index = customerNodes.firstIndex(where: { $0 === node }) else { return }
+
+        let customer = customerData[index]
+        scoreNode.decrement(by: customer.order.basePoints)
+        customersServed += 1
+
+        node.showRejected()
+
+        run(SKAction.wait(forDuration: 1.0)) { [weak self] in
+            guard let self else { return }
+            guard let idx = self.customerNodes.firstIndex(where: { $0 === node }) else { return }
+
+            node.animateExit {
+                node.removeFromParent()
+            }
+            self.customerNodes.remove(at: idx)
+            self.customerData.remove(at: idx)
+            self.repositionCustomerStrip()
+
+            if self.platesRemaining > 0 {
+                self.spawnCustomer()
+            }
+
+            self.checkGameEnd()
+        }
     }
 
     // MARK: - Touch handling
@@ -561,45 +596,69 @@ class KitchenScene: SKScene {
         let placedSet = Set(result.ingredients)
         let isCorrectOrder = requiredSet == placedSet
 
-        if isCorrectOrder && !result.isBurnt {
-            customerNodes.first?.showCompleted()
-            scoreNode.increment()
-        } else {
-            customerNodes.first?.showRejected()
-            scoreNode.decrement()
-        }
-
         // Use a plate
         platesRemaining -= 1
         customersServed += 1
         updatePlateStack()
 
-        run(SKAction.wait(forDuration: 1.5)) { [weak self] in
-            guard let self else { return }
+        if isCorrectOrder && !result.isBurnt {
+            let bonus = customerNodes.first?.isInBonusWindow == true ? 1 : 0
+            customerNodes.first?.showCompleted()
+            scoreNode.increment(by: activeOrder.basePoints + bonus)
 
-            // Remove served customer from queue before game-over check
-            if let servedNode = self.customerNodes.first {
-                servedNode.animateExit {
-                    servedNode.removeFromParent()
-                }
-                self.customerNodes.removeFirst()
-                self.customerData.removeFirst()
+            // Customer stays to eat — set up eating callback then start eating
+            customerNodes.first?.onFinishedEating = { [weak self] in
+                self?.handleCustomerFinishedEating()
             }
+            customerNodes.first?.startEating(duration: 5.0)
+        } else {
+            customerNodes.first?.showRejected()
+            scoreNode.decrement(by: activeOrder.basePoints)
 
-            if self.platesRemaining <= 0 {
-                self.handleGameOver()
-            } else {
-                self.repositionCustomerStrip()
-                self.spawnCustomer()
-                self.stoveTop.reset()
-                self.mixerNode.reset()
-                self.hideMixButton()
-                self.hideServeButton()
-                self.hideMixerBin()
-                self.hidePanBin()
-                self.resetIngredientShelf()
-                self.gamePhase = .addingIngredients
+            // Wrong/burnt — customer leaves after brief delay
+            run(SKAction.wait(forDuration: 1.5)) { [weak self] in
+                self?.removeFirstCustomerAndContinue()
             }
+        }
+
+        // Reset kitchen immediately so player can start next order while customer eats
+        stoveTop.reset()
+        mixerNode.reset()
+        hideMixButton()
+        hideMixerBin()
+        hidePanBin()
+        resetIngredientShelf()
+        gamePhase = .addingIngredients
+    }
+
+    private func handleCustomerFinishedEating() {
+        removeFirstCustomerAndContinue()
+    }
+
+    private func removeFirstCustomerAndContinue() {
+        guard let node = customerNodes.first else {
+            checkGameEnd()
+            return
+        }
+
+        node.animateExit {
+            node.removeFromParent()
+        }
+        customerNodes.removeFirst()
+        customerData.removeFirst()
+        repositionCustomerStrip()
+
+        if platesRemaining > 0 {
+            spawnCustomer()
+        }
+
+        checkGameEnd()
+    }
+
+    private func checkGameEnd() {
+        // Game ends when bench is empty
+        if customerNodes.isEmpty {
+            handleGameOver()
         }
     }
 
