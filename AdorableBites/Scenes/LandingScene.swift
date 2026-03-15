@@ -37,7 +37,7 @@ class LandingScene: SKScene {
         let doraHeight = size.height * 0.35
         let doraScale = doraHeight / doraTexture.size().height
         dora.size = CGSize(width: doraTexture.size().width * doraScale, height: doraHeight)
-        dora.position = CGPoint(x: size.width * 0.82, y: size.height * 0.28)
+        dora.position = CGPoint(x: size.width * 0.82, y: size.height * 0.20)
         dora.zPosition = 1
         addChild(dora)
 
