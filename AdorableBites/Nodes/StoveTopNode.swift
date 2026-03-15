@@ -26,6 +26,11 @@ class StoveTopNode: SKNode {
 
     var currentIngredients: [Ingredient] { storedIngredients }
     var hasContents: Bool { panState != .empty }
+    private(set) var isPickedUp: Bool = false
+    private var burnTimeRemaining: TimeInterval = 0
+    private var burnTimerStartDate: Date?
+    private var closeButton: SKLabelNode?
+    private var closeBg: SKShapeNode?
 
     init(size: CGSize = CGSize(width: 200, height: 200)) {
         self.stoveSize = size
@@ -177,6 +182,9 @@ class StoveTopNode: SKNode {
         progressBar.addChild(fullFill)
         progressBar.alpha = 1.0
 
+        burnTimeRemaining = burnGracePeriod
+        burnTimerStartDate = Date()
+
         let burnCountdown = SKAction.customAction(withDuration: burnGracePeriod) { [weak self] _, elapsed in
             guard let self else { return }
             let remaining = 1.0 - elapsed / self.burnGracePeriod
@@ -219,17 +227,132 @@ class StoveTopNode: SKNode {
         let ingredients = storedIngredients
         let mixed = wasMixed
         removeAction(forKey: "burnTimer")
+        putDownPan()
         reset()
         return (ingredients: ingredients, isBurnt: isBurnt, wasMixed: mixed)
+    }
+
+    // MARK: - Pan pickup
+
+    func pickUpPan() {
+        guard !isPickedUp else { return }
+        isPickedUp = true
+        pauseBurnTimer()
+
+        // Visual lift
+        panSprite.run(SKAction.scale(to: 1.4, duration: 0.2))
+        contentsOverlay?.run(SKAction.scale(to: 1.4, duration: 0.2))
+
+        // X button
+        let bg = SKShapeNode(circleOfRadius: 12)
+        bg.fillColor = UIColor(red: 0.85, green: 0.2, blue: 0.2, alpha: 1.0)
+        bg.strokeColor = .white
+        bg.lineWidth = 2
+        bg.position = CGPoint(x: stoveSize.width * 0.3, y: stoveSize.height * 0.3)
+        bg.zPosition = 10
+        bg.name = "panClose"
+        addChild(bg)
+        closeBg = bg
+
+        let xLabel = SKLabelNode(text: "✕")
+        xLabel.fontSize = 14
+        xLabel.fontName = "AvenirNext-Bold"
+        xLabel.fontColor = .white
+        xLabel.verticalAlignmentMode = .center
+        xLabel.horizontalAlignmentMode = .center
+        xLabel.name = "panClose"
+        bg.addChild(xLabel)
+        closeButton = xLabel
+    }
+
+    func putDownPan() {
+        guard isPickedUp else { return }
+        isPickedUp = false
+        resumeBurnTimer()
+
+        panSprite.run(SKAction.scale(to: 1.0, duration: 0.2))
+        contentsOverlay?.run(SKAction.scale(to: 1.0, duration: 0.2))
+
+        closeBg?.removeFromParent()
+        closeBg = nil
+        closeButton = nil
+    }
+
+    func isPanCloseButtonTap(at point: CGPoint) -> Bool {
+        guard let bg = closeBg else { return false }
+        let localPoint = convert(point, from: parent!)
+        let distance = hypot(localPoint.x - bg.position.x, localPoint.y - bg.position.y)
+        return distance < 25
+    }
+
+    private func pauseBurnTimer() {
+        guard panState == .cooked else { return }
+        if let startDate = burnTimerStartDate {
+            let elapsed = Date().timeIntervalSince(startDate)
+            burnTimeRemaining = max(0, burnGracePeriod - elapsed)
+        }
+        removeAction(forKey: "burnTimer")
+    }
+
+    private func resumeBurnTimer() {
+        guard panState == .cooked, burnTimeRemaining > 0 else { return }
+        guard let burnt = burntCallback else { return }
+        burnTimerStartDate = Date()
+
+        let barWidth = stoveSize.width * 0.7
+        let startProgress = burnTimeRemaining / burnGracePeriod
+
+        let burnCountdown = SKAction.customAction(withDuration: burnTimeRemaining) { [weak self] _, elapsed in
+            guard let self else { return }
+            let remaining = startProgress * (1.0 - elapsed / self.burnTimeRemaining)
+            let fillWidth = barWidth * remaining
+            self.progressFill.removeFromParent()
+
+            let newFill = SKShapeNode(rectOf: CGSize(width: fillWidth, height: 10), cornerRadius: 5)
+            let red = min(1.0, 2.0 * (1.0 - remaining))
+            let green = min(1.0, 2.0 * remaining)
+            newFill.fillColor = UIColor(red: red, green: green, blue: 0.1, alpha: 1.0)
+            newFill.strokeColor = .clear
+            newFill.position = CGPoint(x: -barWidth / 2 * (1.0 - remaining), y: 0)
+            self.progressFill = newFill
+            self.progressBar.addChild(newFill)
+        }
+
+        run(SKAction.sequence([
+            burnCountdown,
+            SKAction.run { [weak self] in
+                guard self?.panState == .cooked else { return }
+                self?.panState = .burnt
+                self?.progressBar.run(SKAction.fadeOut(withDuration: 0.2))
+                let images = PanImageMapping.images(for: self?.storedIngredients ?? [], wasMixed: self?.wasMixed ?? false)
+                self?.showOverlay(imageNamed: "burnt_food")
+                self?.run(SKAction.sequence([
+                    SKAction.run { [weak self] in self?.emitSteam() },
+                    SKAction.wait(forDuration: 0.3),
+                    SKAction.run { [weak self] in self?.emitSteam() },
+                    SKAction.wait(forDuration: 0.3),
+                    SKAction.run { [weak self] in self?.emitSteam() }
+                ]))
+                burnt()
+            }
+        ]), withKey: "burnTimer")
     }
 
     func reset() {
         removeAllActions()
         panState = .empty
+        isPickedUp = false
         storedIngredients.removeAll()
         wasMixed = false
+        burnTimeRemaining = 0
+        burnTimerStartDate = nil
         cookingCompleteCallback = nil
         burntCallback = nil
+        closeBg?.removeFromParent()
+        closeBg = nil
+        closeButton = nil
+        panSprite.setScale(1.0)
+        contentsOverlay?.setScale(1.0)
         contentsOverlay?.removeFromParent()
         contentsOverlay = nil
         hideDropTarget()

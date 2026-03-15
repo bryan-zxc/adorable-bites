@@ -11,6 +11,7 @@ class KitchenScene: SKScene {
         case cooking
         case readyToServe
         case burnt
+        case servingCustomer
     }
 
     private var gamePhase: GamePhase = .addingIngredients
@@ -614,11 +615,41 @@ class KitchenScene: SKScene {
             }
         }
 
-        // 2. Tap stove/pan to serve or start cooking
+        // 2. Serving mode — pan is picked up, tap customer to serve
+        if gamePhase == .servingCustomer {
+            // Tap X on pan → put back
+            if stoveTop.isPanCloseButtonTap(at: location) {
+                exitServingMode()
+                return
+            }
+            // Tap bin → discard
+            for node in tappedNodes {
+                if node.name == "panBin" {
+                    stoveTop.putDownPan()
+                    handlePanBin()
+                    hideCustomerServeTargets()
+                    gamePhase = .addingIngredients
+                    return
+                }
+            }
+            // Tap a customer
+            for node in tappedNodes {
+                if let customerNode = findCustomerNode(in: node) {
+                    if !customerNode.isEating {
+                        serveToCustomer(customerNode)
+                    }
+                    return
+                }
+            }
+            // Anything else → do nothing
+            return
+        }
+
+        // 3. Tap stove/pan to pick up or start cooking
         for node in tappedNodes {
             if findStoveNode(in: node) {
                 if gamePhase == .readyToServe || gamePhase == .burnt {
-                    serveOrder()
+                    enterServingMode()
                     return
                 }
                 if stoveTop.panState == .rawBatter {
@@ -663,6 +694,113 @@ class KitchenScene: SKScene {
                 }
             }
         }
+    }
+
+    private func findCustomerNode(in node: SKNode) -> CustomerNode? {
+        var current: SKNode? = node
+        while let n = current {
+            if let cn = n as? CustomerNode { return cn }
+            current = n.parent
+        }
+        return nil
+    }
+
+    // MARK: - Serving mode
+
+    private func enterServingMode() {
+        gamePhase = .servingCustomer
+        stoveTop.removeAction(forKey: "readyPulse")
+        stoveTop.setScale(1.0)
+        stoveTop.pickUpPan()
+        showCustomerServeTargets()
+    }
+
+    private func exitServingMode() {
+        stoveTop.putDownPan()
+        hideCustomerServeTargets()
+        // Restore previous phase based on pan state
+        gamePhase = stoveTop.panState == .burnt ? .burnt : .readyToServe
+        pulseStove()
+    }
+
+    private func showCustomerServeTargets() {
+        for node in customerNodes {
+            node.showServeTarget(active: !node.isEating)
+        }
+    }
+
+    private func hideCustomerServeTargets() {
+        for node in customerNodes {
+            node.hideServeTarget()
+        }
+    }
+
+    private func serveToCustomer(_ customerNode: CustomerNode) {
+        guard let result = stoveTop.tapToServe() else { return }
+
+        hideCustomerServeTargets()
+        hidePanBin()
+
+        guard let customerIdx = customerNodes.firstIndex(where: { $0 === customerNode }) else { return }
+        let activeOrder = customerData[customerIdx].order
+        let requiredSet = Set(activeOrder.requiredIngredients)
+        let placedSet = Set(result.ingredients)
+        let isCorrectOrder = requiredSet == placedSet && activeOrder.requiresMixing == result.wasMixed
+
+        let servedDishImage = PanImageMapping.servedDishImage(for: result.ingredients, wasMixed: result.wasMixed)
+
+        platesRemaining -= 1
+        customersServed += 1
+        updatePlateStack()
+
+        // Place dish on bench
+        placeDishOnBench(for: customerNode, imageName: servedDishImage)
+
+        if isCorrectOrder && !result.isBurnt {
+            let bonus = customerNode.isInBonusWindow ? 1 : 0
+            customerNode.showCompleted()
+
+            let payment = activeOrder.basePoints + bonus
+            let seatIdx = customerSeatIndices[ObjectIdentifier(customerNode)] ?? 0
+            customerNode.onFinishedEating = { [weak self] in
+                self?.handleCustomerFinishedEating(payment: payment, seatIndex: seatIdx)
+            }
+            customerNode.startEating(duration: 5.0)
+        } else {
+            customerNode.showRejected()
+            hudNode.removeSnowflakes(activeOrder.basePoints)
+
+            run(SKAction.wait(forDuration: 1.5)) { [weak self] in
+                self?.removeCustomerAndContinue(customerNode)
+            }
+        }
+
+        stoveTop.reset()
+        hideMixerBin()
+        gamePhase = .addingIngredients
+    }
+
+    private func removeCustomerAndContinue(_ node: CustomerNode) {
+        guard let idx = customerNodes.firstIndex(where: { $0 === node }) else {
+            checkGameEnd()
+            return
+        }
+
+        if let seatIdx = customerSeatIndices[ObjectIdentifier(node)] {
+            seatItems[seatIdx]?.customerNode = nil
+        }
+        customerSeatIndices.removeValue(forKey: ObjectIdentifier(node))
+        node.animateExit {
+            node.removeFromParent()
+        }
+        customerNodes.remove(at: idx)
+        customerData.remove(at: idx)
+
+        if canSpawnMore {
+            spawnCustomer()
+        }
+
+        checkGameEnd()
     }
 
     private func findIngredientNode(in node: SKNode) -> IngredientNode? {
@@ -841,64 +979,6 @@ class KitchenScene: SKScene {
     }
 
     // MARK: - Serving
-
-    private func serveOrder() {
-        guard let result = stoveTop.tapToServe() else { return }
-
-        stoveTop.removeAction(forKey: "readyPulse")
-        stoveTop.setScale(1.0)
-        hidePanBin()
-
-        guard let activeOrder = customerData.first?.order else { return }
-        let requiredSet = Set(activeOrder.requiredIngredients)
-        let placedSet = Set(result.ingredients)
-        let isCorrectOrder = requiredSet == placedSet && activeOrder.requiresMixing == result.wasMixed
-
-        // Determine served dish image based on what was actually cooked
-        let servedDishImage = PanImageMapping.servedDishImage(for: result.ingredients, wasMixed: result.wasMixed)
-
-        // Use a plate
-        platesRemaining -= 1
-        customersServed += 1
-        updatePlateStack()
-
-        // Place dish on bench first
-        if let customerNode = customerNodes.first {
-            placeDishOnBench(for: customerNode, imageName: servedDishImage)
-        }
-
-        if isCorrectOrder && !result.isBurnt {
-            let bonus = customerNodes.first?.isInBonusWindow == true ? 1 : 0
-            customerNodes.first?.showCompleted()
-
-            // Store payment amount for when money is collected later
-            let payment = activeOrder.basePoints + bonus
-
-            // Customer stays to eat — when done, place money on bench
-            if let customerNode = customerNodes.first {
-                let seatIdx = customerSeatIndices[ObjectIdentifier(customerNode)] ?? 0
-                customerNode.onFinishedEating = { [weak self] in
-                    self?.handleCustomerFinishedEating(payment: payment, seatIndex: seatIdx)
-                }
-            }
-            customerNodes.first?.startEating(duration: 5.0)
-        } else {
-            customerNodes.first?.showRejected()
-            hudNode.removeSnowflakes(activeOrder.basePoints)
-
-            // Wrong/burnt — customer leaves after brief delay
-            run(SKAction.wait(forDuration: 1.5)) { [weak self] in
-                self?.removeFirstCustomerAndContinue()
-            }
-        }
-
-        // Reset stove only — mixer may already have ingredients for the next order
-        stoveTop.reset()
-        hideMixerBin()
-        hidePanBin()
-
-        gamePhase = .addingIngredients
-    }
 
     private func handleCustomerFinishedEating(payment: Int = 0, seatIndex: Int = 0) {
         // Remove eating dish from bench, replace with dirty plate

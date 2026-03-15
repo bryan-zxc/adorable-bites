@@ -207,6 +207,36 @@ class CustomerNode: SKNode {
         timerBarBackground.isHidden = true
     }
 
+    // MARK: - Serve target highlighting
+
+    private var serveTargetBorder: SKShapeNode?
+
+    func showServeTarget(active: Bool) {
+        hideServeTarget()
+        let border = SKShapeNode(rectOf: CGSize(width: 90, height: 90), cornerRadius: 14)
+        border.fillColor = .clear
+        border.strokeColor = active
+            ? UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 0.9)
+            : UIColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 0.6)
+        border.lineWidth = 3
+        border.glowWidth = active ? 4 : 0
+        border.zPosition = -0.5
+        addChild(border)
+        serveTargetBorder = border
+
+        let pulse = SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 0.4),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.4)
+        ])
+        border.run(SKAction.repeatForever(pulse), withKey: "servePulse")
+    }
+
+    func hideServeTarget() {
+        serveTargetBorder?.removeAllActions()
+        serveTargetBorder?.removeFromParent()
+        serveTargetBorder = nil
+    }
+
     func cancelTimer() {
         removeAction(forKey: "customerTimer")
         stopImpatientAnimation()
