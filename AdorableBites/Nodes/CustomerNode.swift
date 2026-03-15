@@ -14,8 +14,10 @@ class CustomerNode: SKNode {
     private let timerBarHeight: CGFloat = 6
     private(set) var isInBonusWindow: Bool = true
     private(set) var isEating: Bool = false
+    private(set) var isWaitingAtDoor: Bool = false
     var onTimerExpired: (() -> Void)?
     var onFinishedEating: (() -> Void)?
+    var onDoorTimerExpired: (() -> Void)?
 
     init(customer: Customer) {
         // Customer avatar
@@ -168,6 +170,41 @@ class CustomerNode: SKNode {
         }
 
         run(SKAction.sequence([eatingCountdown, done]), withKey: "customerTimer")
+    }
+
+    // MARK: - Door waiting
+
+    func startDoorTimer(duration: TimeInterval) {
+        isWaitingAtDoor = true
+        timerBarBackground.isHidden = false
+        timerBarFill.isHidden = false
+
+        updateTimerBar(progress: 1.0, colour: UIColor(red: 0.9, green: 0.6, blue: 0.2, alpha: 1.0))
+
+        let countdown = SKAction.customAction(withDuration: duration) { [weak self] _, elapsed in
+            guard let self else { return }
+            let remaining = 1.0 - elapsed / duration
+            self.updateTimerBar(progress: remaining, colour: UIColor(
+                red: 0.9,
+                green: 0.6 * remaining,
+                blue: 0.2 * remaining,
+                alpha: 1.0
+            ))
+        }
+
+        let expire = SKAction.run { [weak self] in
+            self?.isWaitingAtDoor = false
+            self?.onDoorTimerExpired?()
+        }
+
+        run(SKAction.sequence([countdown, expire]), withKey: "doorTimer")
+    }
+
+    func cancelDoorTimer() {
+        removeAction(forKey: "doorTimer")
+        isWaitingAtDoor = false
+        timerBarFill.isHidden = true
+        timerBarBackground.isHidden = true
     }
 
     func cancelTimer() {
