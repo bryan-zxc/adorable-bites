@@ -5,6 +5,7 @@ struct Recipe {
     let imageName: String
     let requiredIngredients: [Ingredient]
     let basePoints: Int
+    let requiresMixing: Bool
 
     // Timer constants
     static let tapTime: Double = 1.0
@@ -14,10 +15,18 @@ struct Recipe {
 
     var waitTime: TimeInterval {
         let ingredientCount = Double(requiredIngredients.count)
-        // 2 taps per ingredient (tap to pick up + tap to place) + 4 (mix + pour + start cook + serve)
-        let taps = (ingredientCount * 2 + 4) * Recipe.tapTime
-        let quizzes = ingredientCount * Recipe.quizTime
-        let baseTime = taps + quizzes + Recipe.mixingDuration + Recipe.cookingDuration
-        return ceil(baseTime * 1.5)
+        if requiresMixing {
+            // 2 taps per ingredient (pick up + place) + 4 (mix + pour + start cook + serve)
+            let taps = (ingredientCount * 2 + 4) * Recipe.tapTime
+            let quizzes = ingredientCount * Recipe.quizTime
+            let baseTime = taps + quizzes + Recipe.mixingDuration + Recipe.cookingDuration
+            return ceil(baseTime * 1.5)
+        } else {
+            // 2 taps per ingredient (pick up + place in pan) + 2 (start cook + serve)
+            let taps = (ingredientCount * 2 + 2) * Recipe.tapTime
+            let quizzes = ingredientCount * Recipe.quizTime
+            let baseTime = taps + quizzes + Recipe.cookingDuration
+            return ceil(baseTime * 1.5)
+        }
     }
 }

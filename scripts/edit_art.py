@@ -8,9 +8,13 @@ with a transparent background.
 
 Usage:
     uv run scripts/edit_art.py <image_path> "<prompt>"
+    uv run scripts/edit_art.py <image_path> "<prompt>" <output_path>
+
+If output_path is omitted, the edited image overwrites the input file.
 
 Example:
     uv run scripts/edit_art.py AdorableBites/Assets.xcassets/flour.imageset/flour@2x.png "change the background to bright green #00FF00"
+    uv run scripts/edit_art.py input.png "put this on a plate" output.png
 """
 
 import os
@@ -42,11 +46,12 @@ def remove_green_background(image: Image.Image) -> Image.Image:
 
 def main() -> None:
     if len(sys.argv) < 3:
-        print("Usage: uv run scripts/edit_art.py <image_path> \"<prompt>\"")
+        print("Usage: uv run scripts/edit_art.py <image_path> \"<prompt>\" [output_path]")
         sys.exit(1)
 
     image_path = Path(sys.argv[1])
     prompt = sys.argv[2]
+    output_path = Path(sys.argv[3]) if len(sys.argv) > 3 else image_path
 
     if not image_path.exists():
         print(f"File not found: {image_path}")
@@ -73,8 +78,8 @@ def main() -> None:
             if bbox:
                 result = result.crop(bbox)
                 print(f"Cropped to {result.size[0]}x{result.size[1]}")
-            result.save(image_path)
-            print(f"Saved to: {image_path}")
+            result.save(output_path)
+            print(f"Saved to: {output_path}")
             return
 
     print("WARNING: No image returned from Gemini")

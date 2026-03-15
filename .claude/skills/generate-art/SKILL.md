@@ -24,6 +24,19 @@ Tips for good descriptions:
 - If the image will be layered on top of another sprite, say "no bowl" / "no pan" / "transparent background" so you get just the subject
 - Be specific about quantity and arrangement (e.g. "exactly 5 equal compartments in a single horizontal row")
 
+#### Served dish (plated) assets
+
+Finalised dishes shown to customers use a specific naming convention and prompt template:
+
+- **Naming:** `<dish_name>_plate` (e.g. `fried_egg_plate`, `pancakes_plate`)
+- **Template:** The script has a `PLATE_SUFFIX` constant that automatically appends "served on a plate, side-on view, no table, no background elements" to plated dish descriptions
+- **Usage:** Mark plated assets with `{plate}` in the description to use the template:
+  ```python
+  ("fried_egg_plate", "fried egg sunny side up, {plate}"),
+  ```
+
+This ensures all plated dishes have a consistent side-on perspective with no table or background clutter.
+
 ### 2. Run the generator
 
 ```bash
@@ -54,7 +67,10 @@ To modify an existing image (e.g. rotate it, change a detail, adjust colours):
 
 ```bash
 uv run scripts/edit_art.py <path-to-image> "<what to change>"
+uv run scripts/edit_art.py <input-image> "<what to change>" <output-image>
 ```
+
+If an output path is provided, the result is saved there instead of overwriting the input. This is useful for deriving new assets from existing ones (e.g. taking a cooked food image and putting it on a plate).
 
 **When to use edit vs generate:** If an asset already exists and needs modification (remove an element, change a colour, adjust a detail), always use the edit script rather than regenerating from scratch. Regenerating produces a completely different image, while editing preserves the existing style and makes targeted changes.
 

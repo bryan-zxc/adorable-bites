@@ -58,7 +58,19 @@ class RecipePanelNode: SKNode {
             let rowPoint = row.convert(localPoint, from: self)
             if row.hitTest(rowPoint) {
                 row.toggle()
+                relayoutRows()
                 return
+            }
+        }
+    }
+
+    private func relayoutRows() {
+        var yPos = panelHeight / 2 - 70
+        for row in recipeRows {
+            row.run(SKAction.moveTo(y: yPos, duration: 0.2))
+            yPos -= 60
+            if row.isExpanded {
+                yPos -= CGFloat(row.expandedRowCount) * 44
             }
         }
     }
@@ -73,7 +85,8 @@ class RecipeRowNode: SKNode {
     private let arrowLabel: SKLabelNode
     private var ingredientNodes: [SKNode] = []
     private let rowWidth: CGFloat
-    private var isExpanded = false
+    private(set) var isExpanded = false
+    var expandedRowCount: Int { recipe.requiredIngredients.count + 1 }
 
     init(recipe: Recipe, width: CGFloat) {
         self.recipe = recipe
@@ -87,7 +100,10 @@ class RecipeRowNode: SKNode {
 
         let texture = SKTexture(imageNamed: recipe.imageName)
         dishSprite = SKSpriteNode(texture: texture)
-        dishSprite.size = CGSize(width: 36, height: 36)
+        let maxDish: CGFloat = 36
+        let texSize = texture.size()
+        let dishScale = min(maxDish / texSize.width, maxDish / texSize.height)
+        dishSprite.size = CGSize(width: texSize.width * dishScale, height: texSize.height * dishScale)
         dishSprite.position = CGPoint(x: -width / 2 + 28, y: 0)
 
         nameLabel = SKLabelNode(text: recipe.name)
@@ -166,6 +182,61 @@ class RecipeRowNode: SKNode {
             addChild(container)
             ingredientNodes.append(container)
         }
+
+        // Method instruction row — shows cooking path with game images
+        let methodContainer = SKNode()
+        let methodY: CGFloat = -40 - CGFloat(recipe.requiredIngredients.count) * 44
+
+        let methodBg = SKShapeNode(rectOf: CGSize(width: rowWidth - 16, height: 38), cornerRadius: 10)
+        methodBg.fillColor = UIColor(red: 0.90, green: 0.93, blue: 0.97, alpha: 1.0)
+        methodBg.strokeColor = .clear
+        methodContainer.addChild(methodBg)
+
+        let iconSize: CGFloat = 24
+        if recipe.requiresMixing {
+            // Bowl → Pan
+            let bowlIcon = SKSpriteNode(texture: SKTexture(imageNamed: "mixing_bowl"))
+            bowlIcon.size = CGSize(width: iconSize, height: iconSize)
+            bowlIcon.position = CGPoint(x: -30, y: 0)
+            methodContainer.addChild(bowlIcon)
+
+            let arrow = SKLabelNode(text: "→")
+            arrow.fontSize = 16
+            arrow.fontName = "AvenirNext-Bold"
+            arrow.fontColor = UIColor(red: 0.3, green: 0.4, blue: 0.6, alpha: 1.0)
+            arrow.verticalAlignmentMode = .center
+            arrow.position = CGPoint(x: 0, y: 0)
+            methodContainer.addChild(arrow)
+
+            let panIcon = SKSpriteNode(texture: SKTexture(imageNamed: "frying_pan"))
+            panIcon.size = CGSize(width: iconSize, height: iconSize)
+            panIcon.position = CGPoint(x: 30, y: 0)
+            methodContainer.addChild(panIcon)
+        } else {
+            // Straight to pan
+            let arrow = SKLabelNode(text: "→")
+            arrow.fontSize = 16
+            arrow.fontName = "AvenirNext-Bold"
+            arrow.fontColor = UIColor(red: 0.3, green: 0.4, blue: 0.6, alpha: 1.0)
+            arrow.verticalAlignmentMode = .center
+            arrow.position = CGPoint(x: -15, y: 0)
+            methodContainer.addChild(arrow)
+
+            let panIcon = SKSpriteNode(texture: SKTexture(imageNamed: "frying_pan"))
+            panIcon.size = CGSize(width: iconSize, height: iconSize)
+            panIcon.position = CGPoint(x: 15, y: 0)
+            methodContainer.addChild(panIcon)
+        }
+
+        methodContainer.position = CGPoint(x: 0, y: methodY)
+        methodContainer.setScale(0)
+        methodContainer.run(SKAction.sequence([
+            SKAction.wait(forDuration: Double(recipe.requiredIngredients.count) * 0.06),
+            SKAction.scale(to: 1.0, duration: 0.15)
+        ]))
+
+        addChild(methodContainer)
+        ingredientNodes.append(methodContainer)
     }
 
     private func collapse() {

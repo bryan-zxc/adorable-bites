@@ -12,6 +12,7 @@ class StoveTopNode: SKNode {
 
     private(set) var panState: PanState = .empty
     private var storedIngredients: [Ingredient] = []
+    private(set) var wasMixed: Bool = false
     private let cooktopSprite: SKSpriteNode
     private let panSprite: SKSpriteNode
     private var contentsOverlay: SKSpriteNode?
@@ -76,10 +77,25 @@ class StoveTopNode: SKNode {
     func receiveBatter(ingredients: [Ingredient], cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
         guard panState == .empty else { return }
         storedIngredients = ingredients
+        wasMixed = true
         panState = .rawBatter
         cookingCompleteCallback = cookingComplete
         burntCallback = burnt
-        showOverlay(imageNamed: "raw_batter_in_pan")
+        let images = PanImageMapping.images(for: ingredients, wasMixed: true)
+        showOverlay(imageNamed: images.raw)
+    }
+
+    func addIngredientDirect(_ ingredient: Ingredient, cookingComplete: @escaping () -> Void, burnt: @escaping () -> Void) {
+        guard canReceiveIngredient else { return }
+        if !storedIngredients.contains(ingredient) {
+            storedIngredients.append(ingredient)
+        }
+        wasMixed = false
+        panState = .rawBatter
+        cookingCompleteCallback = cookingComplete
+        burntCallback = burnt
+        let images = PanImageMapping.images(for: storedIngredients, wasMixed: false)
+        showOverlay(imageNamed: images.raw)
     }
 
     func startCooking() {
@@ -147,7 +163,8 @@ class StoveTopNode: SKNode {
         glowRing = nil
         removeAction(forKey: "steamAnimation")
 
-        showOverlay(imageNamed: "finished_pancake_in_pan")
+        let images = PanImageMapping.images(for: storedIngredients, wasMixed: wasMixed)
+        showOverlay(imageNamed: images.cooked)
 
         // Burn countdown bar — starts full green, drains to empty red
         let barWidth = stoveSize.width * 0.7
@@ -196,19 +213,21 @@ class StoveTopNode: SKNode {
         ]), withKey: "burnTimer")
     }
 
-    func tapToServe() -> (ingredients: [Ingredient], isBurnt: Bool)? {
+    func tapToServe() -> (ingredients: [Ingredient], isBurnt: Bool, wasMixed: Bool)? {
         guard panState == .cooked || panState == .burnt else { return nil }
         let isBurnt = panState == .burnt
         let ingredients = storedIngredients
+        let mixed = wasMixed
         removeAction(forKey: "burnTimer")
         reset()
-        return (ingredients: ingredients, isBurnt: isBurnt)
+        return (ingredients: ingredients, isBurnt: isBurnt, wasMixed: mixed)
     }
 
     func reset() {
         removeAllActions()
         panState = .empty
         storedIngredients.removeAll()
+        wasMixed = false
         cookingCompleteCallback = nil
         burntCallback = nil
         contentsOverlay?.removeFromParent()

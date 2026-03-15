@@ -57,7 +57,10 @@ class CustomerNode: SKNode {
         // Order dish image inside the bubble
         let orderTexture = SKTexture(imageNamed: customer.order.imageName)
         orderSprite = SKSpriteNode(texture: orderTexture)
-        orderSprite.size = CGSize(width: 50, height: 50)
+        let maxDim: CGFloat = 50
+        let texSize = orderTexture.size()
+        let scale = min(maxDim / texSize.width, maxDim / texSize.height)
+        orderSprite.size = CGSize(width: texSize.width * scale, height: texSize.height * scale)
         orderSprite.position = .zero
         speechBubble.addChild(orderSprite)
 
@@ -217,9 +220,16 @@ class CustomerNode: SKNode {
         ]))
     }
 
+    func moveBubbleBelow() {
+        speechBubble.run(SKAction.move(to: CGPoint(x: 0, y: -65), duration: 0.2))
+    }
+
     func showCompleted() {
         cancelTimer()
         orderSprite.run(SKAction.fadeAlpha(to: 0.2, duration: 0.2))
+
+        // Move bubble below, then show tick, then fade out
+        moveBubbleBelow()
 
         let tick = SKLabelNode(text: "✓")
         tick.fontSize = 40
@@ -233,6 +243,7 @@ class CustomerNode: SKNode {
         speechBubble.addChild(tick)
 
         tick.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.2),
             SKAction.scale(to: 1.3, duration: 0.15),
             SKAction.scale(to: 1.0, duration: 0.1),
             SKAction.wait(forDuration: 0.8),
@@ -240,16 +251,19 @@ class CustomerNode: SKNode {
             SKAction.removeFromParent()
         ]))
 
-        let bounce = SKAction.sequence([
-            SKAction.moveBy(x: 0, y: 10, duration: 0.12),
-            SKAction.moveBy(x: 0, y: -10, duration: 0.12)
-        ])
-        run(SKAction.repeat(bounce, count: 2))
+        // Fade out bubble after tick disappears
+        speechBubble.run(SKAction.sequence([
+            SKAction.wait(forDuration: 1.6),
+            SKAction.fadeOut(withDuration: 0.3)
+        ]))
     }
 
     func showRejected() {
         cancelTimer()
         orderSprite.run(SKAction.fadeAlpha(to: 0.2, duration: 0.2))
+
+        // Move bubble below, then show cross, then fade out
+        moveBubbleBelow()
 
         let cross = SKLabelNode(text: "✗")
         cross.fontSize = 40
@@ -263,8 +277,12 @@ class CustomerNode: SKNode {
         speechBubble.addChild(cross)
 
         cross.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.2),
             SKAction.scale(to: 1.3, duration: 0.15),
-            SKAction.scale(to: 1.0, duration: 0.1)
+            SKAction.scale(to: 1.0, duration: 0.1),
+            SKAction.wait(forDuration: 0.8),
+            SKAction.fadeOut(withDuration: 0.3),
+            SKAction.removeFromParent()
         ]))
 
         let shake = SKAction.sequence([
@@ -274,6 +292,12 @@ class CustomerNode: SKNode {
             SKAction.moveBy(x: 8, y: 0, duration: 0.08)
         ])
         run(SKAction.repeat(shake, count: 2))
+
+        // Fade out bubble after cross disappears
+        speechBubble.run(SKAction.sequence([
+            SKAction.wait(forDuration: 1.6),
+            SKAction.fadeOut(withDuration: 0.3)
+        ]))
     }
 
     func animateExit(completion: @escaping () -> Void) {

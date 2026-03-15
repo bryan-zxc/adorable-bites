@@ -37,6 +37,8 @@ PROMPT_TEMPLATE = (
     "suitable for a children's cooking game"
 )
 
+PLATE_SUFFIX = "served on a plate, side-on view, no table, no background elements"
+
 # Define the assets to generate: (name, description)
 ASSETS = [
     # Ingredients
@@ -69,11 +71,23 @@ ASSETS = [
     # Currency
     ("money", "cute small pile of gold coins, game art style, simple clean design, top-down view"),
     ("snowflake", "single cute sparkly snowflake, Frozen Elsa themed, light blue and white, ice crystal design"),
+    # Egg recipes — pan states
+    ("raw_egg_in_pan", "single cracked raw egg sunny side up, no pan, transparent background, top-down view"),
+    ("fried_egg_in_pan", "single cooked fried egg sunny side up with crispy edges, no pan, transparent background, top-down view"),
+    ("raw_scrambled_in_pan", "wet mixed raw egg liquid poured in circle shape, no pan, transparent background, top-down view"),
+    ("scrambled_egg_in_pan", "cooked fluffy scrambled egg, no pan, transparent background, top-down view"),
+    # Egg recipes — served dishes
+    ("fried_egg_plate", "fried egg sunny side up, {plate}"),
+    ("scrambled_egg_plate", "fluffy scrambled egg, {plate}"),
+    # Mystery food (unrecognised recipe)
+    ("mystery_raw_in_pan", "messy unknown raw food mixture blob, no pan, transparent background, top-down view"),
+    ("mystery_cooked_in_pan", "messy unknown cooked food blob, no pan, transparent background, top-down view"),
+    ("mystery_dish_plate", "messy unknown questionable food, {plate}"),
     # Button icons (small, simple, icon-style — not detailed images)
     ("icon_whisk", "tiny cute cartoon whisk icon, simple minimal design, small icon size, no background"),
     ("icon_serve", "tiny cute cartoon serving cloche dome icon, simple minimal design, small icon size, no background"),
     # Dishes
-    ("pancakes", "stack of pancakes with syrup on a plate"),
+    ("pancakes_plate", "stack of pancakes with syrup, {plate}"),
     # Customer animals (head/portrait only)
     ("customer_bear", "friendly bear face, front-facing portrait"),
     ("customer_cat", "friendly cat face, front-facing portrait"),
@@ -121,6 +135,7 @@ def save_to_asset_catalogue(name: str, image: Image.Image) -> None:
 
 def generate_asset(name: str, description: str) -> None:
     """Generate a single asset using Gemini."""
+    description = description.replace("{plate}", PLATE_SUFFIX)
     prompt = PROMPT_TEMPLATE.format(description=description)
     print(f"Generating: {name} ({description})...")
 

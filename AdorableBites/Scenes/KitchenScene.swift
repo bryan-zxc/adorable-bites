@@ -29,14 +29,33 @@ class KitchenScene: SKScene {
 
     static let pancakeRecipe = Recipe(
         name: "Pancakes",
-        imageName: "pancakes",
+        imageName: "pancakes_plate",
         requiredIngredients: [flour, egg, milk],
-        basePoints: 1
+        basePoints: 1,
+        requiresMixing: true
     )
 
-    static let allRecipes = [pancakeRecipe]
+    static let friedEggRecipe = Recipe(
+        name: "Fried Egg",
+        imageName: "fried_egg_plate",
+        requiredIngredients: [egg],
+        basePoints: 1,
+        requiresMixing: false
+    )
+
+    static let scrambledEggRecipe = Recipe(
+        name: "Scrambled Egg",
+        imageName: "scrambled_egg_plate",
+        requiredIngredients: [egg],
+        basePoints: 1,
+        requiresMixing: true
+    )
+
+    static let allRecipes = [pancakeRecipe, friedEggRecipe, scrambledEggRecipe]
 
     // MARK: - Customer pool
+
+    static let allOrders = [pancakeRecipe, friedEggRecipe, scrambledEggRecipe]
 
     static let customerPool = [
         Customer(name: "Bear", imageName: "customer_bear", order: pancakeRecipe),
@@ -80,8 +99,8 @@ class KitchenScene: SKScene {
     // Money on bench — keyed by seat index, value is (sprite, payment amount)
     private var benchMoneySprites: [Int: (sprite: SKSpriteNode, payment: Int)] = [:]
     private var blockedSeats: Set<Int> = []
-    private let totalPlates = 3  // TODO: change back to 5 after testing
-    private var platesRemaining = 3
+    private let totalPlates = 5
+    private var platesRemaining = 5
     private var customersServed = 0
     private var totalCustomersSpawned = 0
 
@@ -329,7 +348,9 @@ class KitchenScene: SKScene {
         guard canSpawnMore else { return }
         guard let availableSeat = firstAvailableSeatIndex() else { return }
         totalCustomersSpawned += 1
-        let customer = KitchenScene.customerPool.randomElement()!
+        let template = KitchenScene.customerPool.randomElement()!
+        let order = KitchenScene.allOrders.randomElement()!
+        let customer = Customer(name: template.name, imageName: template.imageName, order: order)
         let node = CustomerNode(customer: customer)
         let slotIndex = availableSeat
         let seatPos = seatPositionForSlot(slotIndex)
@@ -440,10 +461,20 @@ class KitchenScene: SKScene {
             for node in tappedNodes {
                 if findMixerNode(in: node) && mixerNode.canReceiveIngredient {
                     if mixerNode.currentIngredients.contains(picked.ingredient) {
-                        // Duplicate — just return to shelf
                         cancelPickup()
                     } else {
                         placeIngredientInMixer(picked)
+                    }
+                    return
+                }
+            }
+            // Tap active pan target
+            for node in tappedNodes {
+                if findStoveNode(in: node) && stoveTop.canReceiveIngredient {
+                    if stoveTop.currentIngredients.contains(picked.ingredient) {
+                        cancelPickup()
+                    } else {
+                        placeIngredientInPan(picked)
                     }
                     return
                 }
@@ -574,20 +605,23 @@ class KitchenScene: SKScene {
         pickedUpIngredient = ingredientNode
         ingredientNode.animatePickup()
 
-        // Show drop targets
+        // Show drop targets — both mixer and pan
         mixerNode.showDropTarget(active: mixerNode.canReceiveIngredient)
+        stoveTop.showDropTarget(active: stoveTop.canReceiveIngredient)
     }
 
     private func cancelPickup() {
         pickedUpIngredient?.animateReturn()
         pickedUpIngredient = nil
         mixerNode.hideDropTarget()
+        stoveTop.hideDropTarget()
     }
 
     private func placeIngredientInMixer(_ ingredientNode: IngredientNode) {
         ingredientNode.animateReturn()
         pickedUpIngredient = nil
         mixerNode.hideDropTarget()
+        stoveTop.hideDropTarget()
 
         mixerNode.addIngredient(ingredientNode.ingredient)
         showMixerBin()
@@ -595,6 +629,26 @@ class KitchenScene: SKScene {
         if mixerNode.canMix {
             pulseMixer()
         }
+    }
+
+    private func placeIngredientInPan(_ ingredientNode: IngredientNode) {
+        ingredientNode.animateReturn()
+        pickedUpIngredient = nil
+        mixerNode.hideDropTarget()
+        stoveTop.hideDropTarget()
+
+        stoveTop.addIngredientDirect(
+            ingredientNode.ingredient,
+            cookingComplete: { [weak self] in
+                self?.onCookingComplete()
+            },
+            burnt: { [weak self] in
+                self?.onBurnt()
+            }
+        )
+
+        pulseStove()
+        showPanBin()
     }
 
     // MARK: - Pan cooking
@@ -679,12 +733,20 @@ class KitchenScene: SKScene {
         guard let activeOrder = customerData.first?.order else { return }
         let requiredSet = Set(activeOrder.requiredIngredients)
         let placedSet = Set(result.ingredients)
-        let isCorrectOrder = requiredSet == placedSet
+        let isCorrectOrder = requiredSet == placedSet && activeOrder.requiresMixing == result.wasMixed
+
+        // Determine served dish image based on what was actually cooked
+        let servedDishImage = PanImageMapping.servedDishImage(for: result.ingredients, wasMixed: result.wasMixed)
 
         // Use a plate
         platesRemaining -= 1
         customersServed += 1
         updatePlateStack()
+
+        // Place dish on bench first
+        if let customerNode = customerNodes.first {
+            placeDishOnBench(for: customerNode, imageName: servedDishImage)
+        }
 
         if isCorrectOrder && !result.isBurnt {
             let bonus = customerNodes.first?.isInBonusWindow == true ? 1 : 0
@@ -692,11 +754,6 @@ class KitchenScene: SKScene {
 
             // Store payment amount for when money is collected later
             let payment = activeOrder.basePoints + bonus
-
-            // Place dish on bench in front of customer
-            if let customerNode = customerNodes.first {
-                placeDishOnBench(for: customerNode, imageName: activeOrder.imageName)
-            }
 
             // Customer stays to eat — when done, place money on bench
             if let customerNode = customerNodes.first {
@@ -1073,7 +1130,10 @@ class KitchenScene: SKScene {
     private func placeDishOnBench(for customerNode: CustomerNode, imageName: String) {
         let texture = SKTexture(imageNamed: imageName)
         let dish = SKSpriteNode(texture: texture)
-        dish.size = CGSize(width: 90, height: 90)
+        let maxDim: CGFloat = 90
+        let texSize = texture.size()
+        let scale = min(maxDim / texSize.width, maxDim / texSize.height)
+        dish.size = CGSize(width: texSize.width * scale, height: texSize.height * scale)
         dish.position = CGPoint(x: benchLeftEdge + benchWidth / 2, y: customerNode.position.y)
         dish.zPosition = 2
         gameLayer.addChild(dish)
