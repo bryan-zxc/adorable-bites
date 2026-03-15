@@ -14,7 +14,9 @@
       "Bash(osascript -e 'tell application \"Simulator\" to activate' && sleep 1 && osascript -e 'tell application \"System Events\" to keystroke \\(ASCII character 29\\) using command down' && sleep 2 && xcrun simctl io \"iPad mini \\(A17 Pro\\)\" screenshot /tmp/adorable_bites_landscape.png 2>&1)",
       "Bash(xcodebuild -project AdorableBites.xcodeproj -scheme AdorableBites -destination 'platform=iOS Simulator,name=iPad mini \\(A17 Pro\\)' build 2>&1 | tail -3 && xcrun simctl terminate \"iPad mini \\(A17 Pro\\)\" com.adorablebites.app 2>&1; xcrun simctl install \"iPad mini \\(A17 Pro\\)\" ~/Library/Developer/Xcode/DerivedData/AdorableBites-bwnpmrnlcnnvwbatpbtcmyhhfmaf/Build/Products/Debug-iphonesimulator/AdorableBites.app 2>&1 && xcrun simctl launch \"iPad mini \\(A17 Pro\\)\" com.adorablebites.app 2>&1 && sleep 2 && xcrun simctl io \"iPad mini \\(A17 Pro\\)\" screenshot /tmp/adorable_bites_v4.png 2>&1 && python3 -c \"from PIL import Image; Image.open\\('/tmp/adorable_bites_v4.png'\\).rotate\\(-90, expand=True\\).save\\('/tmp/adorable_bites_v4_rotated.png'\\)\")",
       "Bash(chmod +x .claude/skills/build-and-preview/scripts/build_and_preview.sh)",
-      "Bash(bash .claude/skills/build-and-preview/scripts/build_and_preview.sh 2>&1)"
+      "Bash(bash .claude/skills/build-and-preview/scripts/build_and_preview.sh 2>&1)",
+      "Bash(gh issue:*)",
+      "Bash(xcodebuild:*)"
     ]
   }
 }
