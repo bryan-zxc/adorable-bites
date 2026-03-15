@@ -16,6 +16,20 @@ class KitchenScene: SKScene {
 
     private var gamePhase: GamePhase = .addingIngredients
 
+    // MARK: - Level config and callbacks
+
+    private var levelConfig: LevelConfig?
+    private var progress: GameProgress = GameProgress.load()
+    var onGoHome: (() -> Void)?
+    var onReplay: (() -> Void)?
+    var onNextLevel: ((LevelConfig) -> Void)?
+
+    convenience init(levelConfig: LevelConfig, progress: GameProgress) {
+        self.init()
+        self.levelConfig = levelConfig
+        self.progress = progress
+    }
+
     // MARK: - Ingredients
 
     static let flour = Ingredient(name: "flour", colour: .systemYellow, imageName: "flour")
@@ -105,8 +119,8 @@ class KitchenScene: SKScene {
 
     // Dish sprites on bench (keyed by customer node) — for eating customers
     private var benchDishSprites: [ObjectIdentifier: SKSpriteNode] = [:]
-    private let totalPlates = 5
-    private var platesRemaining = 5
+    private var totalPlates: Int { levelConfig?.plateCount ?? 5 }
+    private var platesRemaining: Int = 5
     private var customersServed = 0
     private var totalCustomersSpawned = 0
 
@@ -117,7 +131,7 @@ class KitchenScene: SKScene {
 
     // MARK: - Bench and seating
 
-    private let seatCount = 5
+    private var seatCount: Int { levelConfig?.customerCount ?? 5 }
     private var seatPositions: [CGPoint] = []
     private var customerNodes: [CustomerNode] = []
     private var customerData: [Customer] = []
@@ -141,6 +155,7 @@ class KitchenScene: SKScene {
 
     override func didMove(to view: SKView) {
         backgroundColor = UIColor(red: 1.0, green: 0.97, blue: 0.88, alpha: 1.0)
+        platesRemaining = totalPlates
         setupScene()
         spawnCustomer()
     }
@@ -340,7 +355,8 @@ class KitchenScene: SKScene {
     private func setupRecipePanel() {
         let panelTop = size.height - 100
         let panelHeight = panelTop - 10
-        recipePanel = RecipePanelNode(recipes: KitchenScene.allRecipes, width: 200, height: panelHeight)
+        let recipes = levelConfig?.recipes ?? KitchenScene.allRecipes
+        recipePanel = RecipePanelNode(recipes: recipes, width: 200, height: panelHeight)
         recipePanel.position = CGPoint(x: recipePanelCentreX, y: panelTop - panelHeight / 2)
         gameLayer.addChild(recipePanel)
     }
@@ -396,7 +412,8 @@ class KitchenScene: SKScene {
         guard canSpawnMore && hasUnoccupiedSeat() else { return }
         totalCustomersSpawned += 1
         let template = KitchenScene.customerPool.randomElement()!
-        let order = KitchenScene.allOrders.randomElement()!
+        let availableRecipes = levelConfig?.recipes ?? KitchenScene.allOrders
+        let order = availableRecipes.randomElement()!
         let customer = Customer(name: template.name, imageName: template.imageName, order: order)
         let node = CustomerNode(customer: customer)
 
@@ -528,7 +545,12 @@ class KitchenScene: SKScene {
                 }
                 if node.name == "restartButton" {
                     resumeGame()
-                    restartGame()
+                    onReplay?()
+                    return
+                }
+                if node.name == "pauseHomeButton" {
+                    resumeGame()
+                    onGoHome?()
                     return
                 }
             }
@@ -557,8 +579,16 @@ class KitchenScene: SKScene {
 
         // 0b. Next button (game end screen)
         for node in tappedNodes {
-            if node.name == "nextButton" {
-                restartGame()
+            if node.name == "replayButton" {
+                onReplay?()
+                return
+            }
+            if node.name == "nextLevelButton" {
+                handleNextLevel()
+                return
+            }
+            if node.name == "homeButton" {
+                onGoHome?()
                 return
             }
         }
@@ -1241,25 +1271,91 @@ class KitchenScene: SKScene {
         snowResult.zPosition = 92
         addChild(snowResult)
 
-        // Play Again button
-        let nextBtn = SKShapeNode(rectOf: CGSize(width: 160, height: 50), cornerRadius: 14)
-        nextBtn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
-        nextBtn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
-        nextBtn.lineWidth = 2.5
-        nextBtn.position = CGPoint(x: size.width / 2, y: size.height / 2 - 155)
-        nextBtn.name = "nextButton"
-        nextBtn.zPosition = 92
-        addChild(nextBtn)
+        // Save progress
+        progress.totalDollars += finalDollars
+        progress.totalSnowflakes += finalSnowflakes
+        progress.save()
 
-        let nextLabel = SKLabelNode(text: "Play Again!")
-        nextLabel.fontSize = 20
-        nextLabel.fontName = "AvenirNext-Bold"
-        nextLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
-        nextLabel.verticalAlignmentMode = .center
-        nextLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 155)
-        nextLabel.name = "nextButton"
-        nextLabel.zPosition = 93
-        addChild(nextLabel)
+        // Buttons
+        let btnStyle: (SKShapeNode) -> Void = { btn in
+            btn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
+            btn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+            btn.lineWidth = 2.5
+            btn.zPosition = 92
+        }
+        let lblStyle: (SKLabelNode) -> Void = { lbl in
+            lbl.fontSize = 16
+            lbl.fontName = "AvenirNext-Bold"
+            lbl.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+            lbl.verticalAlignmentMode = .center
+            lbl.zPosition = 93
+        }
+
+        let buttonY = size.height / 2 - 150
+        let buttonSpacing: CGFloat = 145
+
+        // Replay button
+        let replayBtn = SKShapeNode(rectOf: CGSize(width: 130, height: 44), cornerRadius: 14)
+        btnStyle(replayBtn)
+        replayBtn.position = CGPoint(x: size.width / 2 - buttonSpacing, y: buttonY)
+        replayBtn.name = "replayButton"
+        addChild(replayBtn)
+        let replayLabel = SKLabelNode(text: "Replay")
+        lblStyle(replayLabel)
+        replayLabel.position = .zero
+        replayLabel.name = "replayButton"
+        replayBtn.addChild(replayLabel)
+
+        // Next Level button
+        let currentLevel = levelConfig?.level ?? 1
+        let nextConfig = LevelConfig.nextLevel(after: currentLevel)
+        if let next = nextConfig {
+            let isUnlocked = progress.isLevelUnlocked(next.level)
+            let nextText = isUnlocked ? "Next Level" : "Unlock (\(next.unlockCost))"
+            let nextBtn = SKShapeNode(rectOf: CGSize(width: 130, height: 44), cornerRadius: 14)
+            btnStyle(nextBtn)
+            nextBtn.position = CGPoint(x: size.width / 2, y: buttonY)
+            nextBtn.name = "nextLevelButton"
+            addChild(nextBtn)
+            let nextLabel = SKLabelNode(text: nextText)
+            lblStyle(nextLabel)
+            nextLabel.position = .zero
+            nextLabel.name = "nextLevelButton"
+            nextBtn.addChild(nextLabel)
+
+            if !isUnlocked {
+                let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
+                snowIcon.size = CGSize(width: 14, height: 14)
+                snowIcon.position = CGPoint(x: -55, y: 0)
+                nextBtn.addChild(snowIcon)
+            }
+        }
+
+        // Home button
+        let homeBtn = SKShapeNode(rectOf: CGSize(width: 130, height: 44), cornerRadius: 14)
+        btnStyle(homeBtn)
+        homeBtn.position = CGPoint(x: size.width / 2 + buttonSpacing, y: buttonY)
+        homeBtn.name = "homeButton"
+        addChild(homeBtn)
+        let homeLabel = SKLabelNode(text: "Home")
+        lblStyle(homeLabel)
+        homeLabel.position = .zero
+        homeLabel.name = "homeButton"
+        homeBtn.addChild(homeLabel)
+    }
+
+    private func handleNextLevel() {
+        let currentLevel = levelConfig?.level ?? 1
+        guard let nextConfig = LevelConfig.nextLevel(after: currentLevel) else { return }
+
+        if progress.isLevelUnlocked(nextConfig.level) {
+            onNextLevel?(nextConfig)
+        } else {
+            if progress.unlockLevel(nextConfig.level, cost: nextConfig.unlockCost) {
+                onNextLevel?(nextConfig)
+            }
+            // Not enough snowflakes — do nothing
+        }
     }
 
     private func restartGame() {
@@ -1503,7 +1599,7 @@ class KitchenScene: SKScene {
         container.addChild(bg)
 
         // Card
-        let card = SKShapeNode(rectOf: CGSize(width: 300, height: 220), cornerRadius: 20)
+        let card = SKShapeNode(rectOf: CGSize(width: 300, height: 280), cornerRadius: 20)
         card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
         card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
         card.lineWidth = 3
@@ -1552,6 +1648,23 @@ class KitchenScene: SKScene {
         restartLabel.verticalAlignmentMode = .center
         restartLabel.name = "restartButton"
         restartBtn.addChild(restartLabel)
+
+        // Home button
+        let homeBtn = SKShapeNode(rectOf: CGSize(width: 220, height: 48), cornerRadius: 14)
+        homeBtn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
+        homeBtn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        homeBtn.lineWidth = 2.5
+        homeBtn.position = CGPoint(x: size.width / 2, y: size.height / 2 - 110)
+        homeBtn.name = "pauseHomeButton"
+        container.addChild(homeBtn)
+
+        let homeLabel = SKLabelNode(text: "Home")
+        homeLabel.fontSize = 18
+        homeLabel.fontName = "AvenirNext-Bold"
+        homeLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        homeLabel.verticalAlignmentMode = .center
+        homeLabel.name = "pauseHomeButton"
+        homeBtn.addChild(homeLabel)
 
         addChild(container)
         pauseOverlay = container

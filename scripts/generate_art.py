@@ -85,6 +85,7 @@ ASSETS = [
     ("mystery_dish_plate", "messy unknown questionable food, {plate}"),
     # Restaurant
     ("door", "cute restaurant entrance door, wooden door with small window, front-facing view, warm colours"),
+    ("restaurant_exterior", "cute cartoon restaurant building exterior, front-facing view, wooden door in centre, windows on each side, striped awning, warm cosy colours, wide landscape aspect"),
     # Button icons (small, simple, icon-style — not detailed images)
     ("icon_whisk", "tiny cute cartoon whisk icon, simple minimal design, small icon size, no background"),
     ("icon_serve", "tiny cute cartoon serving cloche dome icon, simple minimal design, small icon size, no background"),

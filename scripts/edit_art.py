@@ -46,12 +46,18 @@ def remove_green_background(image: Image.Image) -> Image.Image:
 
 def main() -> None:
     if len(sys.argv) < 3:
-        print("Usage: uv run scripts/edit_art.py <image_path> \"<prompt>\" [output_path]")
+        print("Usage: uv run scripts/edit_art.py <image_path> \"<prompt>\" [output_path] [--no-chroma]")
         sys.exit(1)
 
-    image_path = Path(sys.argv[1])
-    prompt = sys.argv[2]
-    output_path = Path(sys.argv[3]) if len(sys.argv) > 3 else image_path
+    # Parse flags
+    args = list(sys.argv[1:])
+    skip_chroma = "--no-chroma" in args
+    if skip_chroma:
+        args.remove("--no-chroma")
+
+    image_path = Path(args[0])
+    prompt = args[1]
+    output_path = Path(args[2]) if len(args) > 2 else image_path
 
     if not image_path.exists():
         print(f"File not found: {image_path}")
@@ -73,7 +79,11 @@ def main() -> None:
             from io import BytesIO
             raw = BytesIO(part.inline_data.data)
             pil_image = Image.open(raw)
-            result = remove_green_background(pil_image)
+            if skip_chroma:
+                result = pil_image
+                print("Skipping chroma key removal")
+            else:
+                result = remove_green_background(pil_image)
             bbox = result.getbbox()
             if bbox:
                 result = result.crop(bbox)

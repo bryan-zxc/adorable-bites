@@ -68,9 +68,11 @@ To modify an existing image (e.g. rotate it, change a detail, adjust colours):
 ```bash
 uv run scripts/edit_art.py <path-to-image> "<what to change>"
 uv run scripts/edit_art.py <input-image> "<what to change>" <output-image>
+uv run scripts/edit_art.py <input-image> "<what to change>" --no-chroma
 ```
 
-If an output path is provided, the result is saved there instead of overwriting the input. This is useful for deriving new assets from existing ones (e.g. taking a cooked food image and putting it on a plate).
+- If an output path is provided, the result is saved there instead of overwriting the input
+- Use `--no-chroma` to skip green background removal — for images that should keep their full background (e.g. full-scene backgrounds, landscapes)
 
 **When to use edit vs generate:** If an asset already exists and needs modification (remove an element, change a colour, adjust a detail), always use the edit script rather than regenerating from scratch. Regenerating produces a completely different image, while editing preserves the existing style and makes targeted changes.
 
