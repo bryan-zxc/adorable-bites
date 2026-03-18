@@ -131,7 +131,8 @@ class KitchenScene: SKScene {
 
     // MARK: - Bench and seating
 
-    private var seatCount: Int { levelConfig?.customerCount ?? 5 }
+    private var chairCount: Int { levelConfig?.chairCount ?? 5 }
+    private var totalCustomerCount: Int { levelConfig?.customerCount ?? 5 }
     private var seatPositions: [CGPoint] = []
     private var customerNodes: [CustomerNode] = []
     private var customerData: [Customer] = []
@@ -205,9 +206,9 @@ class KitchenScene: SKScene {
         let benchHeight = benchTopY - benchBottomY
         let benchCentreY = (benchTopY + benchBottomY) / 2
 
-        let segmentHeight = benchHeight / CGFloat(seatCount)
+        let segmentHeight = benchHeight / CGFloat(chairCount)
 
-        for i in 0..<seatCount {
+        for i in 0..<chairCount {
             let seatY = benchTopY - segmentHeight * (CGFloat(i) + 0.5)
             let seatPos = CGPoint(x: seatX, y: seatY)
             seatPositions.append(seatPos)
@@ -311,6 +312,7 @@ class KitchenScene: SKScene {
         stoveTop = StoveTopNode(size: CGSize(width: 170, height: 170))
         stoveTop.position = CGPoint(x: stoveX, y: workstationY + 10)
         stoveTop.zPosition = 1
+        stoveTop.canOvercook = levelConfig?.canOvercook ?? true
         gameLayer.addChild(stoveTop)
     }
 
@@ -371,7 +373,7 @@ class KitchenScene: SKScene {
         return seatPositions[index]
     }
 
-    private var canSpawnMore: Bool { totalCustomersSpawned < seatCount }
+    private var canSpawnMore: Bool { totalCustomersSpawned < totalCustomerCount }
 
     private func isSeatOccupied(_ index: Int) -> Bool {
         return seatItems[index]?.customerNode != nil
@@ -388,21 +390,21 @@ class KitchenScene: SKScene {
     }
 
     private func hasUnoccupiedSeat() -> Bool {
-        for i in 0..<seatCount {
+        for i in 0..<chairCount {
             if !isSeatOccupied(i) { return true }
         }
         return false
     }
 
     private func firstClearSeatIndex() -> Int? {
-        for i in 0..<seatCount {
+        for i in 0..<chairCount {
             if isSeatClear(i) { return i }
         }
         return nil
     }
 
     private func firstUnoccupiedSeatIndex() -> Int? {
-        for i in 0..<seatCount {
+        for i in 0..<chairCount {
             if !isSeatOccupied(i) { return i }
         }
         return nil
@@ -435,11 +437,13 @@ class KitchenScene: SKScene {
         customerSeatIndices[ObjectIdentifier(node)] = seatIndex
         seatItems[seatIndex] = SeatItem(customerNode: node)
 
-        // Start customer order timer
-        node.onTimerExpired = { [weak self, weak node] in
-            self?.handleCustomerLeft(node: node)
+        // Start customer order timer (if enabled)
+        if levelConfig?.hasCustomerTimer ?? true {
+            node.onTimerExpired = { [weak self, weak node] in
+                self?.handleCustomerLeft(node: node)
+            }
+            node.startTimer(duration: customer.order.waitTime)
         }
-        node.startTimer(duration: customer.order.waitTime)
 
         customerNodes.append(node)
         customerData.append(customer)
@@ -1011,14 +1015,26 @@ class KitchenScene: SKScene {
     // MARK: - Serving
 
     private func handleCustomerFinishedEating(payment: Int = 0, seatIndex: Int = 0) {
-        // Remove eating dish from bench, replace with dirty plate
+        let autoMoney = levelConfig?.autoCollectMoney ?? false
+        let autoClear = levelConfig?.autoClearTable ?? false
+
         if let customerNode = customerNodes.first {
             removeDishFromBench(for: customerNode)
-            placeDirtyPlateOnBench(seatIndex: seatIndex)
 
-            // Place money on bench at the seat
+            if autoClear {
+                // Auto-clear: skip dirty plate, just add to sink directly
+                addDirtyDish()
+            } else {
+                placeDirtyPlateOnBench(seatIndex: seatIndex)
+            }
+
             if payment > 0 && seatIndex < seatPositions.count {
-                placeMoneyAtSeat(seatIndex: seatIndex, payment: payment)
+                if autoMoney {
+                    // Auto-collect: fly money directly to HUD, no tap needed
+                    hudNode.addDollars(payment)
+                } else {
+                    placeMoneyAtSeat(seatIndex: seatIndex, payment: payment)
+                }
             }
         }
         removeFirstCustomerAndContinue()
@@ -1051,7 +1067,7 @@ class KitchenScene: SKScene {
     private func checkGameEnd() {
         let hasCustomers = !customerNodes.isEmpty
         let hasDoorCustomers = !doorQueue.isEmpty
-        let hasDirtySeats = (0..<seatCount).contains { isSeatDirty($0) }
+        let hasDirtySeats = (0..<chairCount).contains { isSeatDirty($0) }
 
         // Condition 1: no customers, no door queue, no dirty seats → all done
         if !hasCustomers && !hasDoorCustomers && !hasDirtySeats {
@@ -1124,8 +1140,7 @@ class KitchenScene: SKScene {
     // MARK: - Game end
 
     private func handleGameOver() {
-        // Total customers is seatCount. We served customersServed of them.
-        let unservedCount = seatCount - customersServed
+        let unservedCount = totalCustomerCount - customersServed
         if unservedCount > 0 {
             showUnservedPopup(count: unservedCount) { [weak self] in
                 self?.showGameEndScreen()
@@ -1309,26 +1324,17 @@ class KitchenScene: SKScene {
         // Next Level button
         let currentLevel = levelConfig?.level ?? 1
         let nextConfig = LevelConfig.nextLevel(after: currentLevel)
-        if let next = nextConfig {
-            let isUnlocked = progress.isLevelUnlocked(next.level)
-            let nextText = isUnlocked ? "Next Level" : "Unlock (\(next.unlockCost))"
+        if nextConfig != nil {
             let nextBtn = SKShapeNode(rectOf: CGSize(width: 130, height: 44), cornerRadius: 14)
             btnStyle(nextBtn)
             nextBtn.position = CGPoint(x: size.width / 2, y: buttonY)
             nextBtn.name = "nextLevelButton"
             addChild(nextBtn)
-            let nextLabel = SKLabelNode(text: nextText)
+            let nextLabel = SKLabelNode(text: "Next Level")
             lblStyle(nextLabel)
             nextLabel.position = .zero
             nextLabel.name = "nextLevelButton"
             nextBtn.addChild(nextLabel)
-
-            if !isUnlocked {
-                let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
-                snowIcon.size = CGSize(width: 14, height: 14)
-                snowIcon.position = CGPoint(x: -55, y: 0)
-                nextBtn.addChild(snowIcon)
-            }
         }
 
         // Home button
@@ -1348,14 +1354,11 @@ class KitchenScene: SKScene {
         let currentLevel = levelConfig?.level ?? 1
         guard let nextConfig = LevelConfig.nextLevel(after: currentLevel) else { return }
 
-        if progress.isLevelUnlocked(nextConfig.level) {
-            onNextLevel?(nextConfig)
-        } else {
-            if progress.unlockLevel(nextConfig.level, cost: nextConfig.unlockCost) {
-                onNextLevel?(nextConfig)
-            }
-            // Not enough snowflakes — do nothing
+        if !progress.isLevelUnlocked(nextConfig.level) {
+            progress.unlockedLevels.insert(nextConfig.level)
+            progress.save()
         }
+        onNextLevel?(nextConfig)
     }
 
     private func restartGame() {

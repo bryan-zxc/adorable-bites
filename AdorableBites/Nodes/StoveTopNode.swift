@@ -26,6 +26,7 @@ class StoveTopNode: SKNode {
 
     var currentIngredients: [Ingredient] { storedIngredients }
     var hasContents: Bool { panState != .empty }
+    var canOvercook: Bool = true
     private(set) var isPickedUp: Bool = false
     private var burnTimeRemaining: TimeInterval = 0
     private var burnTimerStartDate: Date?
@@ -170,6 +171,12 @@ class StoveTopNode: SKNode {
 
         let images = PanImageMapping.images(for: storedIngredients, wasMixed: wasMixed)
         showOverlay(imageNamed: images.cooked)
+
+        guard canOvercook else {
+            // No overcooking — food stays cooked forever
+            progressBar.run(SKAction.fadeOut(withDuration: 0.2))
+            return
+        }
 
         // Burn countdown bar — starts full green, drains to empty red
         let barWidth = stoveSize.width * 0.7

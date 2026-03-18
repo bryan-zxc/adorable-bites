@@ -16,7 +16,10 @@
       "Bash(chmod +x .claude/skills/build-and-preview/scripts/build_and_preview.sh)",
       "Bash(bash .claude/skills/build-and-preview/scripts/build_and_preview.sh 2>&1)",
       "Bash(gh issue:*)",
-      "Bash(xcodebuild:*)"
+      "Bash(xcodebuild:*)",
+      "Bash(bash .claude/skills/build-and-preview/scripts/build_and_preview.sh)",
+      "Bash(osascript:*)",
+      "Bash(git add:*)"
     ]
   }
 }

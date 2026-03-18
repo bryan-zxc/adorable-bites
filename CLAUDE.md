@@ -17,6 +17,17 @@ A cooking/restaurant game where:
 - Crafted quizzes appear at various points in gameplay (e.g. when collecting ingredients, upgrading kitchen features — exact placement TBD)
 - Quizzes are woven into the game flow so they feel like part of the experience, not a separate lesson
 
+### Snowflake & Freeze Theme
+- Snowflakes are Elsa's magical power — they **unfreeze** things, never "unlock" or "lock"
+- All locked content is visually represented as **frozen in ice** (ice block overlay), never a padlock/lock icon
+- Tapping frozen content with enough snowflakes triggers an **unfreeze animation** (ice shatters/melts)
+- Snowflakes are spent to:
+  - **Unfreeze levels** — major milestone levels cost snowflakes (not every level)
+  - **Unfreeze ingredients** — every new ingredient costs snowflakes to unfreeze
+  - **Unfreeze tool shop tiers** — each tier costs snowflakes
+- Use "unfreeze" in all UI text, never "unlock"
+- Use ice block imagery, never padlock imagery
+
 ## Tech Stack
 - **Language:** Swift
 - **Framework:** SpriteKit (2D game framework)
