@@ -7,8 +7,11 @@ Generate game art assets using Google Gemini and save them
 directly into the Xcode asset catalogue.
 
 Usage:
-    uv run scripts/generate_art.py            # generate all assets
-    uv run scripts/generate_art.py frying_pan  # generate one asset by name
+    uv run scripts/generate_art.py                        # generate all assets
+    uv run scripts/generate_art.py frying_pan              # generate one asset by name
+    uv run scripts/generate_art.py --prompt "description" --name my_asset  # custom prompt
+    uv run scripts/generate_art.py --prompt "description" --name my_asset --ref image1.png image2.png
+    uv run scripts/generate_art.py --prompt "description" --name my_asset --no-chroma
 """
 
 import json
@@ -136,26 +139,41 @@ def save_to_asset_catalogue(name: str, image: Image.Image) -> None:
     print(f"  Saved to {imageset_dir}")
 
 
-def generate_asset(name: str, description: str) -> None:
-    """Generate a single asset using Gemini."""
+def generate_asset(
+    name: str,
+    description: str,
+    ref_images: list[Path] | None = None,
+    skip_chroma: bool = False,
+) -> None:
+    """Generate a single asset using Gemini, optionally with reference images."""
     description = description.replace("{plate}", PLATE_SUFFIX)
     prompt = PROMPT_TEMPLATE.format(description=description)
-    print(f"Generating: {name} ({description})...")
+
+    print(f"Generating: {name}")
+    print(f"  Prompt: {prompt[:120]}...")
+
+    # Build content list: text prompt + any reference images
+    contents: list = [prompt]
+    if ref_images:
+        for ref_path in ref_images:
+            print(f"  Reference image: {ref_path}")
+            contents.append(Image.open(ref_path))
 
     response = client.models.generate_content(
         model="gemini-3.1-flash-image-preview",
-        contents=[prompt],
+        contents=contents,
     )
 
     for part in response.parts:
         if part.inline_data is not None:
             raw = BytesIO(part.inline_data.data)
             image = Image.open(raw)
-            image = remove_green_background(image)
+            if not skip_chroma:
+                image = remove_green_background(image)
             bbox = image.getbbox()
             if bbox:
                 image = image.crop(bbox)
-                print(f"  Cropped from 1024x1024 to {image.size[0]}x{image.size[1]}")
+                print(f"  Cropped to {image.size[0]}x{image.size[1]}")
             save_to_asset_catalogue(name, image)
             return
 
@@ -163,23 +181,40 @@ def generate_asset(name: str, description: str) -> None:
 
 
 def main() -> None:
-    asset_dict = {name: desc for name, desc in ASSETS}
-    filter_name = sys.argv[1] if len(sys.argv) > 1 else None
+    import argparse
 
-    if filter_name:
-        if filter_name not in asset_dict:
-            print(f"Unknown asset: {filter_name}")
+    parser = argparse.ArgumentParser(description="Generate game art with Gemini")
+    parser.add_argument("asset_name", nargs="?", help="Name of predefined asset to generate")
+    parser.add_argument("--prompt", type=str, help="Custom prompt (use with --name)")
+    parser.add_argument("--name", type=str, help="Asset name for custom prompt")
+    parser.add_argument("--ref", nargs="+", type=str, help="Reference image path(s) to send alongside prompt")
+    parser.add_argument("--no-chroma", action="store_true", help="Skip green background removal")
+
+    args = parser.parse_args()
+
+    print(f"Asset catalogue: {ASSETS_DIR}\n")
+
+    if args.prompt and args.name:
+        # Custom prompt mode with optional reference images
+        ref_images = [Path(p) for p in args.ref] if args.ref else None
+        generate_asset(
+            args.name, args.prompt,
+            ref_images=ref_images,
+            skip_chroma=args.no_chroma,
+        )
+    elif args.asset_name:
+        # Generate a predefined asset by name
+        asset_dict = {name: desc for name, desc in ASSETS}
+        if args.asset_name not in asset_dict:
+            print(f"Unknown asset: {args.asset_name}")
             print(f"Available: {', '.join(asset_dict.keys())}")
             sys.exit(1)
-        to_generate = [(filter_name, asset_dict[filter_name])]
+        generate_asset(args.asset_name, asset_dict[args.asset_name])
     else:
-        to_generate = ASSETS
-
-    print(f"Asset catalogue: {ASSETS_DIR}")
-    print(f"Generating {len(to_generate)} asset(s)...\n")
-
-    for name, prompt in to_generate:
-        generate_asset(name, prompt)
+        # Generate all predefined assets
+        print(f"Generating {len(ASSETS)} asset(s)...\n")
+        for name, prompt in ASSETS:
+            generate_asset(name, prompt)
 
     print("\nDone! Re-run xcodegen to pick up new assets.")
 

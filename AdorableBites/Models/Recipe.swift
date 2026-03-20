@@ -11,21 +11,23 @@ struct Recipe {
     static let tapTime: Double = 1.0
     static let quizTime: Double = 5.0
     static let mixingDuration: Double = 3.0
-    static let cookingDuration: Double = 4.0
+
+    /// Cooking time = sum of each ingredient's individual cook time
+    var cookTime: TimeInterval {
+        requiredIngredients.reduce(0) { $0 + $1.cookTime }
+    }
 
     var waitTime: TimeInterval {
         let ingredientCount = Double(requiredIngredients.count)
         if requiresMixing {
-            // 2 taps per ingredient (pick up + place) + 4 (mix + pour + start cook + serve)
             let taps = (ingredientCount * 2 + 4) * Recipe.tapTime
             let quizzes = ingredientCount * Recipe.quizTime
-            let baseTime = taps + quizzes + Recipe.mixingDuration + Recipe.cookingDuration
+            let baseTime = taps + quizzes + Recipe.mixingDuration + cookTime
             return ceil(baseTime * 1.5)
         } else {
-            // 2 taps per ingredient (pick up + place in pan) + 2 (start cook + serve)
             let taps = (ingredientCount * 2 + 2) * Recipe.tapTime
             let quizzes = ingredientCount * Recipe.quizTime
-            let baseTime = taps + quizzes + Recipe.cookingDuration
+            let baseTime = taps + quizzes + cookTime
             return ceil(baseTime * 1.5)
         }
     }

@@ -4,6 +4,7 @@ struct GameProgress: Codable {
     var totalDollars: Int = 0
     var totalSnowflakes: Int = 0
     var unlockedLevels: Set<Int> = [1]
+    var seenTutorials: Set<Int> = []
 
     private static let storageKey = "gameProgress"
 

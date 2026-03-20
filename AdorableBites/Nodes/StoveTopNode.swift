@@ -21,7 +21,7 @@ class StoveTopNode: SKNode {
     private let stoveSize: CGSize
     private var glowRing: SKShapeNode?
 
-    let cookingDuration: TimeInterval = 4.0
+    var cookingDuration: TimeInterval = 4.0
     let burnGracePeriod: TimeInterval = 5.0
 
     var currentIngredients: [Ingredient] { storedIngredients }

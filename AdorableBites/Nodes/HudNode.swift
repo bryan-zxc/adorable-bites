@@ -6,7 +6,9 @@ class HudNode: SKNode {
     private let moneyLabel: SKLabelNode
     private let snowflakeLabel: SKLabelNode
     private(set) var dollars: Int = 0
-    private(set) var snowflakes: Int = 0
+    var snowflakes: Int = 0 {
+        didSet { snowflakeLabel.text = "\(snowflakes)" }
+    }
 
     init(width: CGFloat = 200) {
         let height: CGFloat = 80
@@ -101,7 +103,6 @@ class HudNode: SKNode {
 
     func addSnowflakes(_ amount: Int) {
         snowflakes += amount
-        snowflakeLabel.text = "\(snowflakes)"
 
         let bounce = SKAction.sequence([
             SKAction.scale(to: 1.3, duration: 0.15),
@@ -112,7 +113,6 @@ class HudNode: SKNode {
 
     func removeSnowflakes(_ amount: Int) {
         snowflakes -= amount
-        snowflakeLabel.text = "\(snowflakes)"
 
         let originalColour = snowflakeLabel.fontColor
         let flash = SKAction.sequence([
@@ -127,5 +127,30 @@ class HudNode: SKNode {
             SKAction.moveBy(x: 5, y: 0, duration: 0.05)
         ])
         snowflakeLabel.run(SKAction.group([flash, shake]))
+    }
+
+    // MARK: - Floating feedback
+
+    func showSnowflakeChange(_ amount: Int) {
+        let text = amount > 0 ? "+\(amount)" : "\(amount)"
+        let colour: UIColor = amount > 0
+            ? UIColor(red: 0.2, green: 0.7, blue: 0.3, alpha: 1.0)
+            : UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
+
+        let label = SKLabelNode(text: text)
+        label.fontSize = 18
+        label.fontName = "AvenirNext-Bold"
+        label.fontColor = colour
+        label.verticalAlignmentMode = .center
+        label.horizontalAlignmentMode = .center
+        label.position = CGPoint(x: snowflakeLabel.position.x + 40, y: snowflakeLabel.position.y)
+        label.zPosition = 10
+        addChild(label)
+
+        let rise = SKAction.moveBy(x: 0, y: 30, duration: 0.8)
+        let fade = SKAction.fadeOut(withDuration: 0.8)
+        label.run(SKAction.group([rise, fade])) {
+            label.removeFromParent()
+        }
     }
 }

@@ -19,7 +19,12 @@
       "Bash(xcodebuild:*)",
       "Bash(bash .claude/skills/build-and-preview/scripts/build_and_preview.sh)",
       "Bash(osascript:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(gh api:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(open:*)"
     ]
   }
 }

@@ -32,11 +32,11 @@ class KitchenScene: SKScene {
 
     // MARK: - Ingredients
 
-    static let flour = Ingredient(name: "flour", colour: .systemYellow, imageName: "flour")
-    static let egg = Ingredient(name: "egg", colour: .systemOrange, imageName: "egg")
-    static let milk = Ingredient(name: "milk", colour: .systemCyan, imageName: "milk")
-    static let butter = Ingredient(name: "butter", colour: .systemYellow, imageName: "butter")
-    static let chocolate = Ingredient(name: "chocolate", colour: .brown, imageName: "chocolate")
+    static let flour = Ingredient(name: "flour", colour: .systemYellow, imageName: "flour", cookTime: 4)
+    static let egg = Ingredient(name: "egg", colour: .systemOrange, imageName: "egg", cookTime: 8)
+    static let milk = Ingredient(name: "milk", colour: .systemCyan, imageName: "milk", cookTime: 2)
+    static let butter = Ingredient(name: "butter", colour: .systemYellow, imageName: "butter", cookTime: 2)
+    static let chocolate = Ingredient(name: "chocolate", colour: .brown, imageName: "chocolate", cookTime: 6)
 
     static let allIngredients = [milk, egg, flour, butter, chocolate]
 
@@ -122,6 +122,7 @@ class KitchenScene: SKScene {
     private var totalPlates: Int { levelConfig?.plateCount ?? 5 }
     private var platesRemaining: Int = 5
     private var customersServed = 0
+    private var missedCustomers = 0
     private var totalCustomersSpawned = 0
 
     // Door queue
@@ -158,8 +159,223 @@ class KitchenScene: SKScene {
         backgroundColor = UIColor(red: 1.0, green: 0.97, blue: 0.88, alpha: 1.0)
         platesRemaining = totalPlates
         setupScene()
-        spawnCustomer()
+        showTutorialIfNeeded {
+            self.spawnCustomer()
+        }
     }
+
+    private func showTutorialIfNeeded(completion: @escaping () -> Void) {
+        let level = levelConfig?.level ?? 1
+        guard let message = levelConfig?.tutorialMessage,
+              !progress.seenTutorials.contains(level) else {
+            completion()
+            return
+        }
+
+        gameLayer.isPaused = true
+
+        // Container node for easy cleanup
+        let tutorialContainer = SKNode()
+        tutorialContainer.zPosition = 80
+        tutorialContainer.name = "tutorialContainer"
+        addChild(tutorialContainer)
+
+        // Full-screen dim overlay
+        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        overlay.fillColor = UIColor(white: 0, alpha: 0.6)
+        overlay.strokeColor = .clear
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.zPosition = 0
+        tutorialContainer.addChild(overlay)
+
+        // Full-screen card with padding
+        let padding: CGFloat = 30
+        let cardW = size.width - padding * 2
+        let cardH = size.height - padding * 2
+        let card = SKShapeNode(rectOf: CGSize(width: cardW, height: cardH), cornerRadius: 24)
+        card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+        card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        card.lineWidth = 3
+        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        card.zPosition = 1
+        tutorialContainer.addChild(card)
+
+        let centreX = size.width / 2
+        let topY = size.height - padding
+
+        // Title message — centred at top
+        let msgLabel = SKLabelNode(text: message)
+        msgLabel.fontSize = 28
+        msgLabel.fontName = "ChalkboardSE-Bold"
+        msgLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        msgLabel.verticalAlignmentMode = .center
+        msgLabel.horizontalAlignmentMode = .center
+        msgLabel.preferredMaxLayoutWidth = cardW - 60
+        msgLabel.numberOfLines = 0
+        msgLabel.position = CGPoint(x: centreX, y: topY - 55)
+        msgLabel.zPosition = 2
+        tutorialContainer.addChild(msgLabel)
+
+        // Dora — large, on the left, comfortably inside the card with whitespace
+        let doraTexture = SKTexture(imageNamed: "dora")
+        let dora = SKSpriteNode(texture: doraTexture)
+        let doraHeight: CGFloat = cardH * 0.65
+        let doraScale = doraHeight / doraTexture.size().height
+        dora.size = CGSize(width: doraTexture.size().width * doraScale, height: doraHeight)
+        dora.position = CGPoint(x: padding + dora.size.width / 2 + 20, y: size.height / 2 - 30)
+        dora.zPosition = 2
+        tutorialContainer.addChild(dora)
+
+        // Step images in Z-pattern: 1→2 (right), then ↓, then 3→4 (right)
+        // Tight 2x2 grid to the right of Dora
+        let images = levelConfig?.tutorialImages ?? []
+        let labels = levelConfig?.tutorialStepLabels ?? []
+        if images.count == 4 {
+            let stepSize: CGFloat = 120
+            let gap: CGFloat = 14  // tight gap between boxes
+            let arrowSize: CGFloat = 20
+            let labelHeight: CGFloat = 20
+
+            // Grid area: right of Dora to right card edge
+            let gridRight = size.width - padding - 20
+            let doraRight = dora.position.x + dora.size.width / 2 + 20
+            let gridWidth = gridRight - doraRight
+            // Two columns + one arrow gap between them
+            let colSpacing = stepSize + arrowSize + gap * 2
+            let gridCentreX = doraRight + gridWidth / 2
+            let gridCentreY = size.height / 2 - 20
+
+            // Row spacing: step + label + arrow gap
+            let rowSpacing = stepSize + labelHeight + arrowSize + gap
+
+            let positions: [(CGFloat, CGFloat)] = [
+                (gridCentreX - colSpacing / 2, gridCentreY + rowSpacing / 2),   // 1: top-left
+                (gridCentreX + colSpacing / 2, gridCentreY + rowSpacing / 2),   // 2: top-right
+                (gridCentreX - colSpacing / 2, gridCentreY - rowSpacing / 2),   // 3: bottom-left
+                (gridCentreX + colSpacing / 2, gridCentreY - rowSpacing / 2),   // 4: bottom-right
+            ]
+
+            var stepCentres: [CGPoint] = []
+
+            for (i, (cx, cy)) in positions.enumerated() {
+                let pos = CGPoint(x: cx, y: cy)
+                stepCentres.append(pos)
+
+                // White background frame
+                let frame = SKShapeNode(rectOf: CGSize(width: stepSize + 6, height: stepSize + 6), cornerRadius: 8)
+                frame.fillColor = UIColor(white: 1, alpha: 0.3)
+                frame.strokeColor = UIColor(red: 0.8, green: 0.74, blue: 0.65, alpha: 1.0)
+                frame.lineWidth = 2
+                frame.position = pos
+                frame.zPosition = 1
+                tutorialContainer.addChild(frame)
+
+                // Step image
+                let tex = SKTexture(imageNamed: images[i])
+                let step = SKSpriteNode(texture: tex)
+                let texSize = tex.size()
+                let sc = min(stepSize / texSize.width, stepSize / texSize.height)
+                step.size = CGSize(width: texSize.width * sc, height: texSize.height * sc)
+                step.position = pos
+                step.zPosition = 2
+                tutorialContainer.addChild(step)
+
+                // Green number circle
+                let circle = SKShapeNode(circleOfRadius: 12)
+                circle.fillColor = UIColor(red: 0.3, green: 0.7, blue: 0.4, alpha: 1.0)
+                circle.strokeColor = .clear
+                circle.position = CGPoint(x: cx - stepSize / 2 + 12, y: cy + stepSize / 2 - 12)
+                circle.zPosition = 4
+                tutorialContainer.addChild(circle)
+
+                let numLabel = SKLabelNode(text: "\(i + 1)")
+                numLabel.fontSize = 13
+                numLabel.fontName = "AvenirNext-Bold"
+                numLabel.fontColor = .white
+                numLabel.verticalAlignmentMode = .center
+                numLabel.position = .zero
+                circle.addChild(numLabel)
+
+                // Label below step
+                if i < labels.count {
+                    let stepLabel = SKLabelNode(text: labels[i])
+                    stepLabel.fontSize = 13
+                    stepLabel.fontName = "ChalkboardSE-Bold"
+                    stepLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+                    stepLabel.verticalAlignmentMode = .top
+                    stepLabel.horizontalAlignmentMode = .center
+                    stepLabel.position = CGPoint(x: cx, y: cy - stepSize / 2 - 6)
+                    stepLabel.zPosition = 2
+                    tutorialContainer.addChild(stepLabel)
+                }
+            }
+
+            // Arrows — small, fitting in the gaps between boxes
+            let arrowColour = UIColor(red: 0.55, green: 0.45, blue: 0.3, alpha: 1.0)
+
+            // 1 → 2 (right)
+            let a1 = CGPoint(x: (stepCentres[0].x + stepCentres[1].x) / 2, y: stepCentres[0].y)
+            let arrow1 = SKLabelNode(text: "➜")
+            arrow1.fontSize = 22
+            arrow1.fontColor = arrowColour
+            arrow1.verticalAlignmentMode = .center
+            arrow1.position = a1
+            arrow1.zPosition = 2
+            tutorialContainer.addChild(arrow1)
+
+            // 2 → 3 (down-left diagonal)
+            let a2 = CGPoint(x: gridCentreX, y: gridCentreY)
+            let arrow2 = SKLabelNode(text: "➜")
+            arrow2.fontSize = 22
+            arrow2.fontColor = arrowColour
+            arrow2.verticalAlignmentMode = .center
+            arrow2.position = a2
+            arrow2.zRotation = -.pi * 0.75
+            arrow2.zPosition = 2
+            tutorialContainer.addChild(arrow2)
+
+            // 3 → 4 (right)
+            let a3 = CGPoint(x: (stepCentres[2].x + stepCentres[3].x) / 2, y: stepCentres[2].y)
+            let arrow3 = SKLabelNode(text: "➜")
+            arrow3.fontSize = 22
+            arrow3.fontColor = arrowColour
+            arrow3.verticalAlignmentMode = .center
+            arrow3.position = a3
+            arrow3.zPosition = 2
+            tutorialContainer.addChild(arrow3)
+        }
+
+        // "Let's Cook!" button at the bottom
+        let btn = SKShapeNode(rectOf: CGSize(width: 200, height: 50), cornerRadius: 16)
+        btn.fillColor = UIColor(red: 0.3, green: 0.7, blue: 0.4, alpha: 1.0)
+        btn.strokeColor = UIColor(red: 0.2, green: 0.55, blue: 0.3, alpha: 1.0)
+        btn.lineWidth = 2
+        btn.position = CGPoint(x: centreX, y: padding + 55)
+        btn.zPosition = 2
+        btn.name = "tutorialDismiss"
+        tutorialContainer.addChild(btn)
+
+        let btnLabel = SKLabelNode(text: "Let's Cook!")
+        btnLabel.fontSize = 22
+        btnLabel.fontName = "ChalkboardSE-Bold"
+        btnLabel.fontColor = .white
+        btnLabel.verticalAlignmentMode = .center
+        btnLabel.position = .zero
+        btnLabel.name = "tutorialDismiss"
+        btn.addChild(btnLabel)
+
+        // Store completion for touch handler
+        tutorialDismissAction = { [weak self] in
+            tutorialContainer.removeFromParent()
+            self?.gameLayer.isPaused = false
+            self?.progress.seenTutorials.insert(level)
+            self?.progress.save()
+            self?.tutorialDismissAction = nil
+            completion()
+        }
+    }
+
+    private var tutorialDismissAction: (() -> Void)?
 
     private func setupScene() {
         gameLayer = SKNode()
@@ -468,6 +684,7 @@ class KitchenScene: SKScene {
     private func handleDoorCustomerLeft(node: CustomerNode?) {
         guard let node, let index = doorQueue.firstIndex(where: { $0 === node }) else { return }
         hudNode.removeSnowflakes(1)
+        missedCustomers += 1
         customersServed += 1
 
         node.animateExit {
@@ -506,6 +723,7 @@ class KitchenScene: SKScene {
 
         let customer = customerData[index]
         hudNode.removeSnowflakes(customer.order.basePoints)
+        missedCustomers += 1
         customersServed += 1
 
         node.showRejected()
@@ -539,6 +757,23 @@ class KitchenScene: SKScene {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         let tappedNodes = nodes(at: location)
+
+        // Unfreeze popup — tap anywhere to progress
+        if unfreezeContainer != nil {
+            handleUnfreezeTap()
+            return
+        }
+
+        // Tutorial dismiss
+        if tutorialDismissAction != nil {
+            for node in tappedNodes {
+                if node.name == "tutorialDismiss" {
+                    tutorialDismissAction?()
+                    return
+                }
+            }
+            return // Block all other touches while tutorial is showing
+        }
 
         // Pause menu interactions (always active)
         if pauseOverlay != nil {
@@ -803,6 +1038,7 @@ class KitchenScene: SKScene {
         } else {
             customerNode.showRejected()
             hudNode.removeSnowflakes(activeOrder.basePoints)
+            missedCustomers += 1
 
             run(SKAction.wait(forDuration: 1.5)) { [weak self] in
                 self?.removeCustomerAndContinue(customerNode)
@@ -876,12 +1112,14 @@ class KitchenScene: SKScene {
             onCorrect: { [weak self] in
                 guard let self, let node = self.pendingIngredientNode else { return }
                 self.hudNode.addSnowflakes(1)
+                self.hudNode.showSnowflakeChange(+1)
                 self.enterPickupMode(node)
                 self.activeQuiz = nil
                 self.pendingIngredientNode = nil
             },
             onWrong: { [weak self] in
                 self?.hudNode.removeSnowflakes(1)
+                self?.hudNode.showSnowflakeChange(-1)
                 self?.activeQuiz = nil
                 self?.pendingIngredientNode = nil
             }
@@ -946,6 +1184,13 @@ class KitchenScene: SKScene {
 
     private func startPanCooking() {
         gamePhase = .cooking
+
+        // Set cook time from the recipe's ingredients
+        if let order = customerData.first?.order {
+            let isTraining = (levelConfig?.level ?? 1) <= 10
+            stoveTop.cookingDuration = isTraining ? order.cookTime * 0.5 : order.cookTime
+        }
+
         stoveTop.startCooking()
         showPanBin()
     }
@@ -1139,10 +1384,30 @@ class KitchenScene: SKScene {
 
     // MARK: - Game end
 
+    private var levelEndBonus: Int = 0
+
     private func handleGameOver() {
-        let unservedCount = totalCustomerCount - customersServed
-        if unservedCount > 0 {
-            showUnservedPopup(count: unservedCount) { [weak self] in
+        // Include unserved customers in the missed count
+        let unserved = totalCustomerCount - customersServed
+        missedCustomers += unserved
+
+        // Calculate level-end bonus: 3sf (0 missed), 2sf (1 missed), 1sf (2+ missed)
+        if missedCustomers == 0 {
+            levelEndBonus = 3
+        } else if missedCustomers == 1 {
+            levelEndBonus = 2
+        } else {
+            levelEndBonus = 1
+        }
+        hudNode.addSnowflakes(levelEndBonus)
+
+        // Negative protection: if net snowflakes are negative, zero them out
+        if hudNode.snowflakes < 0 {
+            hudNode.snowflakes = 0
+        }
+
+        if unserved > 0 {
+            showUnservedPopup(count: unserved) { [weak self] in
                 self?.showGameEndScreen()
             }
         } else {
@@ -1151,8 +1416,7 @@ class KitchenScene: SKScene {
     }
 
     private func showUnservedPopup(count: Int, completion: @escaping () -> Void) {
-        // Deduct snowflakes for unserved customers
-        hudNode.removeSnowflakes(count)
+        // No snowflake deduction here — missed customers reduce the level-end bonus instead
 
         // Show all unserved customers with crosses
         for node in customerNodes {
@@ -1187,7 +1451,7 @@ class KitchenScene: SKScene {
         title.zPosition = 87
         addChild(title)
 
-        let detail = SKLabelNode(text: "\(count) customer\(count == 1 ? "" : "s") left hungry  −\(count) snowflakes")
+        let detail = SKLabelNode(text: "\(count) customer\(count == 1 ? "" : "s") left hungry")
         detail.fontSize = 20
         detail.fontName = "AvenirNext-Medium"
         detail.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
@@ -1211,105 +1475,229 @@ class KitchenScene: SKScene {
     }
 
     private func showGameEndScreen() {
-        let finalDollars = hudNode.dollars
-        let finalSnowflakes = hudNode.snowflakes
-        let messageText = finalDollars > 0 ? "Congratulations!" : "Better luck next time!"
+        let earnedDollars = hudNode.dollars
+        let quizSnow = hudNode.snowflakes - levelEndBonus
+        let earnedSnowflakes = hudNode.snowflakes
+        let prevDollars = progress.totalDollars
+        let prevSnowflakes = progress.totalSnowflakes
+        let messageText = earnedDollars > 0 ? "Congratulations!" : "Better luck next time!"
+
+        let cx = size.width / 2
+        let brown = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        let blue = UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 1.0)
+        let green = UIColor(red: 0.2, green: 0.65, blue: 0.3, alpha: 1.0)
 
         // Dim overlay
         let overlay = SKShapeNode(rectOf: size)
         overlay.fillColor = UIColor(white: 0, alpha: 0.6)
         overlay.strokeColor = .clear
-        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.position = CGPoint(x: cx, y: size.height / 2)
         overlay.zPosition = 90
         addChild(overlay)
 
         // Card
-        let card = SKShapeNode(rectOf: CGSize(width: 450, height: 420), cornerRadius: 24)
+        let cardH: CGFloat = 520
+        let card = SKShapeNode(rectOf: CGSize(width: 460, height: cardH), cornerRadius: 24)
         card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
         card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
         card.lineWidth = 3
-        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        card.position = CGPoint(x: cx, y: size.height / 2)
         card.zPosition = 91
         addChild(card)
 
-        // Dora
+        // Dora — large, fills the top portion
         let doraTexture = SKTexture(imageNamed: "dora")
         let dora = SKSpriteNode(texture: doraTexture)
-        let doraHeight: CGFloat = 180
+        let doraHeight: CGFloat = 200
         let doraScale = doraHeight / doraTexture.size().height
         dora.size = CGSize(width: doraTexture.size().width * doraScale, height: doraHeight)
-        dora.position = CGPoint(x: size.width / 2, y: size.height / 2 + 70)
+        dora.position = CGPoint(x: cx, y: size.height / 2 + 130)
         dora.zPosition = 92
         addChild(dora)
 
         // Message
         let message = SKLabelNode(text: messageText)
-        message.fontSize = 30
+        message.fontSize = 26
         message.fontName = "AvenirNext-Bold"
-        message.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        message.fontColor = brown
         message.verticalAlignmentMode = .center
-        message.position = CGPoint(x: size.width / 2, y: size.height / 2 - 45)
+        message.position = CGPoint(x: cx, y: size.height / 2 + 5)
         message.zPosition = 92
         addChild(message)
 
-        // Money earned
-        let moneyIcon = SKSpriteNode(texture: SKTexture(imageNamed: "money"))
-        moneyIcon.size = CGSize(width: 24, height: 24)
-        moneyIcon.position = CGPoint(x: size.width / 2 - 50, y: size.height / 2 - 85)
-        moneyIcon.zPosition = 92
-        addChild(moneyIcon)
+        // --- Current totals row ---
+        let totalsY = size.height / 2 - 50
+        let totalsLabel = SKLabelNode(text: "Your total:")
+        totalsLabel.fontSize = 14
+        totalsLabel.fontName = "AvenirNext-Medium"
+        totalsLabel.fontColor = brown
+        totalsLabel.alpha = 0.6
+        totalsLabel.verticalAlignmentMode = .center
+        totalsLabel.position = CGPoint(x: cx, y: totalsY + 28)
+        totalsLabel.zPosition = 92
+        addChild(totalsLabel)
 
-        let moneyResult = SKLabelNode(text: "$\(finalDollars)")
-        moneyResult.fontSize = 22
-        moneyResult.fontName = "AvenirNext-Bold"
-        moneyResult.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
-        moneyResult.horizontalAlignmentMode = .left
-        moneyResult.verticalAlignmentMode = .center
-        moneyResult.position = CGPoint(x: size.width / 2 - 30, y: size.height / 2 - 85)
-        moneyResult.zPosition = 92
-        addChild(moneyResult)
+        // Money total
+        let moneyTotalIcon = SKSpriteNode(texture: SKTexture(imageNamed: "money"))
+        moneyTotalIcon.size = CGSize(width: 20, height: 20)
+        moneyTotalIcon.position = CGPoint(x: cx - 60, y: totalsY)
+        moneyTotalIcon.zPosition = 92
+        addChild(moneyTotalIcon)
 
-        // Snowflakes earned
-        let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
-        snowIcon.size = CGSize(width: 24, height: 24)
-        snowIcon.position = CGPoint(x: size.width / 2 - 50, y: size.height / 2 - 115)
-        snowIcon.zPosition = 92
-        addChild(snowIcon)
+        let moneyTotalLabel = SKLabelNode(text: "$\(prevDollars)")
+        moneyTotalLabel.fontSize = 20
+        moneyTotalLabel.fontName = "AvenirNext-Bold"
+        moneyTotalLabel.fontColor = brown
+        moneyTotalLabel.horizontalAlignmentMode = .left
+        moneyTotalLabel.verticalAlignmentMode = .center
+        moneyTotalLabel.position = CGPoint(x: cx - 42, y: totalsY)
+        moneyTotalLabel.zPosition = 92
+        addChild(moneyTotalLabel)
 
-        let snowResult = SKLabelNode(text: "\(finalSnowflakes)")
-        snowResult.fontSize = 22
-        snowResult.fontName = "AvenirNext-Bold"
-        snowResult.fontColor = UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 1.0)
-        snowResult.horizontalAlignmentMode = .left
-        snowResult.verticalAlignmentMode = .center
-        snowResult.position = CGPoint(x: size.width / 2 - 30, y: size.height / 2 - 115)
-        snowResult.zPosition = 92
-        addChild(snowResult)
+        // Snowflake total
+        let snowTotalIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
+        snowTotalIcon.size = CGSize(width: 20, height: 20)
+        snowTotalIcon.position = CGPoint(x: cx + 30, y: totalsY)
+        snowTotalIcon.zPosition = 92
+        addChild(snowTotalIcon)
 
-        // Save progress
-        progress.totalDollars += finalDollars
-        progress.totalSnowflakes += finalSnowflakes
-        progress.save()
+        let snowTotalLabel = SKLabelNode(text: "\(prevSnowflakes)")
+        snowTotalLabel.fontSize = 20
+        snowTotalLabel.fontName = "AvenirNext-Bold"
+        snowTotalLabel.fontColor = blue
+        snowTotalLabel.horizontalAlignmentMode = .left
+        snowTotalLabel.verticalAlignmentMode = .center
+        snowTotalLabel.position = CGPoint(x: cx + 48, y: totalsY)
+        snowTotalLabel.zPosition = 92
+        addChild(snowTotalLabel)
 
-        // Buttons
+        // --- Earnings row ---
+        let earnY = size.height / 2 - 95
+
+        // + $X earned
+        let moneyEarn = SKLabelNode(text: "+ $\(earnedDollars)")
+        moneyEarn.fontSize = 22
+        moneyEarn.fontName = "AvenirNext-Bold"
+        moneyEarn.fontColor = green
+        moneyEarn.verticalAlignmentMode = .center
+        moneyEarn.position = CGPoint(x: cx - 50, y: earnY)
+        moneyEarn.zPosition = 92
+        addChild(moneyEarn)
+
+        // + Xsf quiz
+        let snowEarn = SKLabelNode(text: "+ \(quizSnow) quiz")
+        snowEarn.fontSize = 18
+        snowEarn.fontName = "AvenirNext-Bold"
+        snowEarn.fontColor = blue
+        snowEarn.verticalAlignmentMode = .center
+        snowEarn.position = CGPoint(x: cx + 50, y: earnY)
+        snowEarn.zPosition = 92
+        addChild(snowEarn)
+
+        // --- Bonus snowflakes (1-3 icons) ---
+        let bonusY = earnY - 55
+        let bonusLabel = SKLabelNode(text: "Bonus:")
+        bonusLabel.fontSize = 14
+        bonusLabel.fontName = "AvenirNext-Medium"
+        bonusLabel.fontColor = brown
+        bonusLabel.alpha = 0.6
+        bonusLabel.verticalAlignmentMode = .center
+        bonusLabel.position = CGPoint(x: cx - 60, y: bonusY)
+        bonusLabel.zPosition = 92
+        addChild(bonusLabel)
+
+        let snowflakeTexture = SKTexture(imageNamed: "snowflake")
+        var bonusIcons: [SKSpriteNode] = []
+        for i in 0..<3 {
+            let icon = SKSpriteNode(texture: snowflakeTexture)
+            icon.size = CGSize(width: 26, height: 26)
+            icon.position = CGPoint(x: cx - 10 + CGFloat(i) * 32, y: bonusY)
+            icon.zPosition = 92
+            icon.alpha = 0.25  // start dim, animate in
+            addChild(icon)
+            bonusIcons.append(icon)
+        }
+
+        // --- Animation sequence ---
+        func makeBounce() -> SKAction {
+            SKAction.sequence([SKAction.scale(to: 1.3, duration: 0.12), SKAction.scale(to: 1.0, duration: 0.12)])
+        }
+
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.5),
+            // Animate money earning → fly into total
+            SKAction.run {
+                moneyEarn.run(SKAction.group([
+                    SKAction.fadeOut(withDuration: 0.3),
+                    SKAction.move(to: moneyTotalLabel.position, duration: 0.3)
+                ]))
+            },
+            SKAction.wait(forDuration: 0.35),
+            SKAction.run { [self] in
+                moneyTotalLabel.text = "$\(prevDollars + earnedDollars)"
+                moneyTotalLabel.run(makeBounce())
+            },
+            SKAction.wait(forDuration: 0.3),
+            // Animate quiz snowflakes → fly into total
+            SKAction.run {
+                snowEarn.run(SKAction.group([
+                    SKAction.fadeOut(withDuration: 0.3),
+                    SKAction.move(to: snowTotalLabel.position, duration: 0.3)
+                ]))
+            },
+            SKAction.wait(forDuration: 0.35),
+            SKAction.run { [self] in
+                snowTotalLabel.text = "\(prevSnowflakes + quizSnow)"
+                snowTotalLabel.run(makeBounce())
+            },
+            SKAction.wait(forDuration: 0.2),
+            // Animate bonus snowflakes one by one
+            SKAction.run { [self] in
+                for i in 0..<levelEndBonus {
+                    let delay = Double(i) * 0.3
+                    bonusIcons[i].run(SKAction.sequence([
+                        SKAction.wait(forDuration: delay),
+                        SKAction.fadeAlpha(to: 1.0, duration: 0.2),
+                        makeBounce(),
+                        SKAction.wait(forDuration: 0.1),
+                        SKAction.run { [self] in
+                            snowTotalLabel.text = "\(prevSnowflakes + quizSnow + i + 1)"
+                            snowTotalLabel.run(makeBounce())
+                        }
+                    ]))
+                }
+            },
+            SKAction.wait(forDuration: Double(levelEndBonus) * 0.3 + 0.3),
+            // Save progress and show buttons
+            SKAction.run { [self] in
+                progress.totalDollars += earnedDollars
+                progress.totalSnowflakes += earnedSnowflakes
+                progress.save()
+                showEndScreenButtons(cardH: cardH)
+            }
+        ]))
+
+    }
+
+    private func showEndScreenButtons(cardH: CGFloat) {
+        let brown = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         let btnStyle: (SKShapeNode) -> Void = { btn in
             btn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
             btn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
             btn.lineWidth = 2.5
             btn.zPosition = 92
         }
-        let lblStyle: (SKLabelNode) -> Void = { lbl in
+        let lblStyle: (SKLabelNode) -> Void = { [brown] lbl in
             lbl.fontSize = 16
             lbl.fontName = "AvenirNext-Bold"
-            lbl.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+            lbl.fontColor = brown
             lbl.verticalAlignmentMode = .center
             lbl.zPosition = 93
         }
 
-        let buttonY = size.height / 2 - 150
+        let buttonY = size.height / 2 - cardH / 2 + 45
         let buttonSpacing: CGFloat = 145
 
-        // Replay button
         let replayBtn = SKShapeNode(rectOf: CGSize(width: 130, height: 44), cornerRadius: 14)
         btnStyle(replayBtn)
         replayBtn.position = CGPoint(x: size.width / 2 - buttonSpacing, y: buttonY)
@@ -1321,7 +1709,6 @@ class KitchenScene: SKScene {
         replayLabel.name = "replayButton"
         replayBtn.addChild(replayLabel)
 
-        // Next Level button
         let currentLevel = levelConfig?.level ?? 1
         let nextConfig = LevelConfig.nextLevel(after: currentLevel)
         if nextConfig != nil {
@@ -1337,7 +1724,6 @@ class KitchenScene: SKScene {
             nextBtn.addChild(nextLabel)
         }
 
-        // Home button
         let homeBtn = SKShapeNode(rectOf: CGSize(width: 130, height: 44), cornerRadius: 14)
         btnStyle(homeBtn)
         homeBtn.position = CGPoint(x: size.width / 2 + buttonSpacing, y: buttonY)
@@ -1348,17 +1734,231 @@ class KitchenScene: SKScene {
         homeLabel.position = .zero
         homeLabel.name = "homeButton"
         homeBtn.addChild(homeLabel)
+
+        // Fade buttons in
+        for node in [replayBtn, homeBtn] {
+            node.alpha = 0
+            node.run(SKAction.fadeIn(withDuration: 0.3))
+        }
     }
+
+    private var unfreezeContainer: SKNode?
+    private var unfreezeNextConfig: LevelConfig?
+    private var unfreezePhase: Int = 0  // 0 = frozen (tap to unfreeze), 1 = unfrozen (tap to play)
 
     private func handleNextLevel() {
         let currentLevel = levelConfig?.level ?? 1
         guard let nextConfig = LevelConfig.nextLevel(after: currentLevel) else { return }
 
-        if !progress.isLevelUnlocked(nextConfig.level) {
-            progress.unlockedLevels.insert(nextConfig.level)
-            progress.save()
+        if progress.isLevelUnlocked(nextConfig.level) {
+            onNextLevel?(nextConfig)
+        } else {
+            showUnfreezePopup(for: nextConfig)
         }
-        onNextLevel?(nextConfig)
+    }
+
+    private func showUnfreezePopup(for config: LevelConfig) {
+        unfreezeNextConfig = config
+        unfreezePhase = 0
+
+        let container = SKNode()
+        container.zPosition = 100
+        addChild(container)
+        unfreezeContainer = container
+
+        // Full dim overlay — covers everything including game end screen
+        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
+        overlay.fillColor = UIColor(white: 0, alpha: 0.75)
+        overlay.strokeColor = .clear
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        container.addChild(overlay)
+
+        // Card background
+        let card = SKShapeNode(rectOf: CGSize(width: 300, height: 360), cornerRadius: 24)
+        card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+        card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        card.lineWidth = 3
+        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        container.addChild(card)
+
+        // "Level X" title
+        let title = SKLabelNode(text: "Level \(config.level)")
+        title.fontSize = 24
+        title.fontName = "ChalkboardSE-Bold"
+        title.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        title.verticalAlignmentMode = .center
+        title.position = CGPoint(x: 0, y: 130)
+        card.addChild(title)
+
+        // Frozen level frame
+        let frameSize: CGFloat = 150
+        let frozenFrame = SKSpriteNode(texture: SKTexture(imageNamed: "level_frame_frozen"))
+        frozenFrame.size = CGSize(width: frameSize, height: frameSize)
+        frozenFrame.position = CGPoint(x: 0, y: 20)
+        frozenFrame.name = "unfreezeFrame"
+        card.addChild(frozenFrame)
+
+        // Level number — icy blue
+        let numLabel = SKLabelNode(text: "\(config.level)")
+        numLabel.fontSize = 52
+        numLabel.fontName = "ChalkboardSE-Bold"
+        numLabel.fontColor = UIColor(red: 0.55, green: 0.7, blue: 0.85, alpha: 0.8)
+        numLabel.verticalAlignmentMode = .center
+        numLabel.horizontalAlignmentMode = .center
+        numLabel.position = CGPoint(x: 0, y: 2)
+        numLabel.zPosition = 1
+        numLabel.name = "unfreezeNumber"
+        frozenFrame.addChild(numLabel)
+
+        // Snowflake cost — prominent, below frame
+        let cost = max(1, config.unlockCost)
+
+        let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
+        snowIcon.size = CGSize(width: 28, height: 28)
+        snowIcon.position = CGPoint(x: -18, y: -80)
+        card.addChild(snowIcon)
+
+        let costLabel = SKLabelNode(text: "-\(cost)")
+        costLabel.fontSize = 24
+        costLabel.fontName = "AvenirNext-Bold"
+        costLabel.fontColor = UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 1.0)
+        costLabel.verticalAlignmentMode = .center
+        costLabel.horizontalAlignmentMode = .left
+        costLabel.position = CGPoint(x: 4, y: -80)
+        card.addChild(costLabel)
+
+        // "Tap to unfreeze!" hint
+        let hint = SKLabelNode(text: "Tap to unfreeze!")
+        hint.fontSize = 18
+        hint.fontName = "ChalkboardSE-Bold"
+        hint.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        hint.verticalAlignmentMode = .center
+        hint.position = CGPoint(x: 0, y: -120)
+        hint.name = "unfreezeHint"
+        card.addChild(hint)
+
+        // Pulse animation on the frame
+        let pulse = SKAction.sequence([
+            SKAction.scale(to: 1.05, duration: 0.5),
+            SKAction.scale(to: 1.0, duration: 0.5)
+        ])
+        frozenFrame.run(SKAction.repeatForever(pulse))
+    }
+
+    private func findNode(named name: String, in node: SKNode) -> SKNode? {
+        if node.name == name { return node }
+        for child in node.children {
+            if let found = findNode(named: name, in: child) { return found }
+        }
+        return nil
+    }
+
+    private func handleUnfreezeTap() {
+        guard let container = unfreezeContainer,
+              let config = unfreezeNextConfig else { return }
+
+        if unfreezePhase == 0 {
+            // Phase 0: unfreeze
+            let cost = max(1, config.unlockCost)
+            guard progress.unlockLevel(config.level, cost: cost) else {
+                // Can't afford — show message with current balance, then dismiss back to end screen
+                if let hint = findNode(named: "unfreezeHint", in: container) as? SKLabelNode {
+                    hint.text = "Not enough! You have \(progress.totalSnowflakes) snowflakes"
+                    hint.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
+                }
+                if let frame = findNode(named: "unfreezeFrame", in: container) {
+                    let shake = SKAction.sequence([
+                        SKAction.moveBy(x: -8, y: 0, duration: 0.05),
+                        SKAction.moveBy(x: 16, y: 0, duration: 0.05),
+                        SKAction.moveBy(x: -16, y: 0, duration: 0.05),
+                        SKAction.moveBy(x: 8, y: 0, duration: 0.05)
+                    ])
+                    frame.run(shake)
+                }
+                // Auto-dismiss after 1.5s back to end screen
+                run(SKAction.sequence([
+                    SKAction.wait(forDuration: 1.5),
+                    SKAction.run { [self] in
+                        container.removeFromParent()
+                        unfreezeContainer = nil
+                        unfreezeNextConfig = nil
+                    }
+                ]))
+                return
+            }
+
+            // Swap frozen frame to normal frame with magic sparkle effect
+            if let frame = findNode(named: "unfreezeFrame", in: container) as? SKSpriteNode {
+                frame.removeAllActions()
+                let framePos = frame.parent?.convert(frame.position, to: container) ?? frame.position
+
+                // Flash white
+                let flash = SKShapeNode(rectOf: CGSize(width: 160, height: 160), cornerRadius: 10)
+                flash.fillColor = .white
+                flash.strokeColor = .clear
+                flash.alpha = 0
+                flash.position = framePos
+                flash.zPosition = 10
+                container.addChild(flash)
+
+                // Sparkle particles around the frame
+                for _ in 0..<12 {
+                    let spark = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
+                    spark.size = CGSize(width: 16, height: 16)
+                    spark.position = framePos
+                    spark.zPosition = 11
+                    spark.alpha = 1.0
+                    container.addChild(spark)
+
+                    let angle = CGFloat.random(in: 0...(.pi * 2))
+                    let dist = CGFloat.random(in: 60...120)
+                    let dx = cos(angle) * dist
+                    let dy = sin(angle) * dist
+
+                    spark.run(SKAction.sequence([
+                        SKAction.group([
+                            SKAction.moveBy(x: dx, y: dy, duration: 0.5),
+                            SKAction.fadeOut(withDuration: 0.5),
+                            SKAction.scale(to: 0.3, duration: 0.5)
+                        ]),
+                        SKAction.removeFromParent()
+                    ]))
+                }
+
+                // Flash + swap texture
+                flash.run(SKAction.sequence([
+                    SKAction.fadeAlpha(to: 0.8, duration: 0.1),
+                    SKAction.run {
+                        frame.texture = SKTexture(imageNamed: "level_frame")
+                        if let num = frame.childNode(withName: "unfreezeNumber") as? SKLabelNode {
+                            num.fontColor = UIColor(red: 0.5, green: 0.3, blue: 0.1, alpha: 1.0)
+                        }
+                    },
+                    SKAction.fadeOut(withDuration: 0.3),
+                    SKAction.removeFromParent()
+                ]))
+
+                // Bounce the frame
+                frame.run(SKAction.sequence([
+                    SKAction.scale(to: 1.2, duration: 0.15),
+                    SKAction.scale(to: 1.0, duration: 0.2)
+                ]))
+            }
+
+            // Update hint
+            if let hint = findNode(named: "unfreezeHint", in: container) as? SKLabelNode {
+                hint.text = "Tap to play!"
+            }
+
+            unfreezePhase = 1
+
+        } else {
+            // Phase 1: go to next level
+            container.removeFromParent()
+            unfreezeContainer = nil
+            unfreezeNextConfig = nil
+            onNextLevel?(config)
+        }
     }
 
     private func restartGame() {
@@ -1379,6 +1979,8 @@ class KitchenScene: SKScene {
         doorQueueData.removeAll()
         platesRemaining = totalPlates
         customersServed = 0
+        missedCustomers = 0
+        levelEndBonus = 0
         totalCustomersSpawned = 0
         gamePhase = .addingIngredients
         activeQuiz = nil
