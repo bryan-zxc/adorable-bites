@@ -105,6 +105,18 @@ These are the foundational training levels. Every core game mechanic is introduc
 | 10 | 2 | 3 | 7 | 35s | 44.3s | Fried Egg, Pan Toast, Buttered Egg | 20 sf | ~4.2 min | -- | Faster Poisson; Tier 1 (12 sf) |
 
 - **Arrival:** "seq" = next customer arrives when chair clears (no overlap). Seconds = Poisson mean interval.
+
+### Poisson Customer Arrival (L7+)
+
+From L7 onwards, customers arrive on a Poisson timer that runs independently of gameplay:
+
+- A random timer (mean = arrival interval) fires in the background, spawning customers until all for the level have arrived
+- **First customer** arrives immediately at level start (no wait)
+- **Clear seat available**: customer sits immediately
+- **No clear seat, door is empty**: customer stands at door with a door timer
+- **No clear seat, door already occupied**: customer does NOT spawn — the remaining customer count stays the same (totalCustomersSpawned is NOT incremented), and we wait for the next Poisson tick to try again
+- The Poisson timer is completely independent of cooking, serving, or table clearing — it just keeps ticking
+- "seq" levels (L1-6) do NOT use Poisson — the next customer spawns only after the previous customer's seat is fully cleared
 - **Seq time:** per-customer sequential cycle time from the timing model.
 - **Frozen cost:** snowflake cost to unfreeze. L1 is free (starting level). All other levels cost at least 1 sf; special frozen levels cost more.
 - **Duration:** strong-player estimate (no missed customers).

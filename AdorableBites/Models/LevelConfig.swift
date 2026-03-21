@@ -58,6 +58,16 @@ struct LevelConfig {
             newIngredients: ["bread"],
             arrivalInterval: 0
         ),
+        LevelConfig(
+            level: 4, name: "", recipeNames: ["Fried Egg", "Pan Toast"],
+            chairCount: 1, customerCount: 3, plateCount: 3, unlockCost: 1,
+            autoCollectMoney: false, autoClearTable: true,
+            canOvercook: true, hasCustomerTimer: true,
+            tutorialMessage: "Time to collect your pay! Tap the money on the table after customers finish eating.",
+            tutorialImages: ["tutorial_collect_money"], tutorialStepLabels: ["Tap to collect"],
+            newIngredients: [],
+            arrivalInterval: 0
+        ),
     ]
 
     @MainActor

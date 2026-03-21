@@ -5,6 +5,8 @@ struct GameProgress: Codable {
     var totalSnowflakes: Int = 0
     var unlockedLevels: Set<Int> = [1]
     var seenTutorials: Set<Int> = []
+    var quizGrade: Int = 1  // 1-9, persistent setting
+    var seenQuizGradeNudge: Bool = false
 
     private static let storageKey = "gameProgress"
 

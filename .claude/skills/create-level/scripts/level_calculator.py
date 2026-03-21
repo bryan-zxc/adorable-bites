@@ -259,24 +259,54 @@ def calculate_patience(
 # Player profiles
 # ---------------------------------------------------------------------------
 
+def avg_quiz_reward(difficulty: int) -> float:
+    """Average reward for quiz at given difficulty level (1-9).
+    Question: A(1-9) + B(1-difficulty), reward = min(A, B).
+    """
+    total = 0
+    count = 0
+    for a in range(1, 10):
+        for b in range(1, difficulty + 1):
+            total += min(a, b)
+            count += 1
+    return total / count
+
+
+# Recommended quiz difficulty by level range
+RECOMMENDED_DIFFICULTY = {
+    (1, 3): 1,
+    (4, 10): 2,
+    (11, 20): 3,
+    (21, 30): 4,
+}
+
+
+def difficulty_for_level(level: int) -> int:
+    """Get recommended quiz difficulty for a level."""
+    for (lo, hi), diff in RECOMMENDED_DIFFICULTY.items():
+        if lo <= level <= hi:
+            return diff
+    return 4  # default for levels beyond 30
+
+
 @dataclass
 class PlayerProfile:
     name: str
     missed_per_level: float   # customers missed (0 for strong, 0.5 avg, 2 slow)
-    quiz_accuracy: float      # 0-1
-    difficulty: int            # 1, 2, or 3
+    quiz_accuracy: float      # 0-1 (assume 95% — they level up when comfortable)
     tip_rate: float            # fraction of serves that get tips
     training_miss: float = 0   # missed during L1-5 training
 
-    @property
-    def net_snowflake_per_quiz(self) -> float:
-        """Expected snowflakes per quiz attempt."""
-        avg_reward = {1: 1.0, 2: 1.5, 3: 2.0}[self.difficulty]
+    def net_snowflake_per_quiz_at_level(self, level: int) -> float:
+        """Net snowflakes per quiz at the recommended difficulty for this level."""
+        diff = difficulty_for_level(level)
+        avg_reward = avg_quiz_reward(diff)
         return self.quiz_accuracy * avg_reward - (1 - self.quiz_accuracy) * 1
 
-    def net_snowflake_per_quiz_at_diff(self, diff: int) -> float:
-        avg_reward = {1: 1.0, 2: 1.5, 3: 2.0}[diff]
-        return self.quiz_accuracy * avg_reward - (1 - self.quiz_accuracy) * 1
+    @property
+    def net_snowflake_per_quiz(self) -> float:
+        """Default net (uses difficulty 2 as baseline)."""
+        return self.net_snowflake_per_quiz_at_level(4)
 
     def avg_pay(self, recipe_pool: list[Recipe]) -> float:
         """Average $ per served customer given the recipe pool."""
@@ -288,9 +318,9 @@ class PlayerProfile:
 
 
 PROFILES = {
-    "strong":  PlayerProfile("Strong",  0,   0.90, 3, 0.50, training_miss=0),
-    "average": PlayerProfile("Average", 0.5, 0.80, 2, 0.35, training_miss=0),
-    "slow":    PlayerProfile("Slow",    2.0, 0.70, 1, 0.20, training_miss=1.0),
+    "strong":  PlayerProfile("Strong",  0,   0.95, 0.50, training_miss=0),
+    "average": PlayerProfile("Average", 0.5, 0.95, 0.35, training_miss=0),
+    "slow":    PlayerProfile("Slow",    2.0, 0.95, 0.20, training_miss=1.0),
 }
 
 
@@ -480,11 +510,8 @@ def calculate_economy(
     avg_ingredients = sum(r.ingredients for r in pool) / len(pool)
     quizzes = customers * avg_ingredients
 
-    # Net snowflakes from quizzes
-    if level <= 3:
-        net_per_quiz = profile.net_snowflake_per_quiz_at_diff(1)
-    else:
-        net_per_quiz = profile.net_snowflake_per_quiz
+    # Net snowflakes from quizzes (using recommended difficulty for this level)
+    net_per_quiz = profile.net_snowflake_per_quiz_at_level(level)
 
     quiz_snow = round(quizzes * net_per_quiz - missed * 1)
 
@@ -591,7 +618,7 @@ def run_economy_projection(profile_name: str = "average"):
 
     print(f"\n{'='*80}")
     print(f"  Economy Projection: {profile.name} player")
-    print(f"  Accuracy={profile.quiz_accuracy*100:.0f}%, Difficulty=+{profile.difficulty}, "
+    print(f"  Accuracy={profile.quiz_accuracy*100:.0f}%, "
           f"Tip={profile.tip_rate*100:.0f}%, Miss={profile.missed_per_level}/level")
     print(f"{'='*80}\n")
 

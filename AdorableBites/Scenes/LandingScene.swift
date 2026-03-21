@@ -54,6 +54,9 @@ class LandingScene: SKScene {
         // Currency display — top right
         setupCurrencyDisplay()
 
+        // Quiz difficulty selector
+        setupDifficultySelector()
+
         // Scrollable level card strip
         setupLevelStrip()
     }
@@ -96,6 +99,124 @@ class LandingScene: SKScene {
         snowLabel.verticalAlignmentMode = .center
         snowLabel.position = CGPoint(x: -30, y: -12)
         currencyBg.addChild(snowLabel)
+    }
+
+    // MARK: - Quiz difficulty selector (dropdown)
+
+    private var difficultyLabel: SKLabelNode?
+    private var difficultyDropdown: SKNode?
+
+    private func setupDifficultySelector() {
+        let brown = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+
+        // Main button that opens dropdown
+        let bg = SKShapeNode(rectOf: CGSize(width: 180, height: 36), cornerRadius: 10)
+        bg.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.95)
+        bg.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        bg.lineWidth = 2
+        bg.position = CGPoint(x: size.width - 100, y: size.height - 90)
+        bg.zPosition = 5
+        bg.name = "diffToggle"
+        addChild(bg)
+
+        let label = SKLabelNode(text: "Quiz Grade \(progress.quizGrade)  ▼")
+        label.fontSize = 14
+        label.fontName = "AvenirNext-Bold"
+        label.fontColor = brown
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: 0, y: 0)
+        label.name = "diffToggle"
+        bg.addChild(label)
+        difficultyLabel = label
+    }
+
+    private func showDifficultyDropdown() {
+        // Remove existing dropdown
+        difficultyDropdown?.removeFromParent()
+
+        let brown = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        let container = SKNode()
+        container.zPosition = 20
+        addChild(container)
+        difficultyDropdown = container
+
+        let itemHeight: CGFloat = 32
+        let dropdownWidth: CGFloat = 180
+        let startY = size.height - 112  // just below the button
+
+        for i in 1...9 {
+            let y = startY - CGFloat(i - 1) * itemHeight
+
+            let itemBg = SKShapeNode(rectOf: CGSize(width: dropdownWidth, height: itemHeight - 2), cornerRadius: 6)
+            itemBg.fillColor = i == progress.quizGrade
+                ? UIColor(red: 0.85, green: 0.80, blue: 0.70, alpha: 0.98)
+                : UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+            itemBg.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 0.5)
+            itemBg.lineWidth = 1
+            itemBg.position = CGPoint(x: size.width - 100, y: y)
+            itemBg.name = "diffOption_\(i)"
+            container.addChild(itemBg)
+
+            let itemLabel = SKLabelNode(text: "Level \(i)")
+            itemLabel.fontSize = 14
+            itemLabel.fontName = i == progress.quizGrade ? "AvenirNext-Bold" : "AvenirNext-Medium"
+            itemLabel.fontColor = brown
+            itemLabel.verticalAlignmentMode = .center
+            itemLabel.position = .zero
+            itemLabel.name = "diffOption_\(i)"
+            itemBg.addChild(itemLabel)
+        }
+    }
+
+    private func hideDifficultyDropdown() {
+        difficultyDropdown?.removeFromParent()
+        difficultyDropdown = nil
+    }
+
+    // MARK: - Frozen level tap handling
+
+    private var unfreezePopup: UnfreezePopupNode?
+
+    private func handleFrozenLevelTap(_ config: LevelConfig) {
+        // Check if previous level is unlocked
+        if config.level > 1 && !progress.isLevelUnlocked(config.level - 1) {
+            if let card = levelStrip.children.first(where: { $0.name == "level_\(config.level)" }) {
+                let shake = SKAction.sequence([
+                    SKAction.moveBy(x: -6, y: 0, duration: 0.05),
+                    SKAction.moveBy(x: 12, y: 0, duration: 0.05),
+                    SKAction.moveBy(x: -12, y: 0, duration: 0.05),
+                    SKAction.moveBy(x: 6, y: 0, duration: 0.05)
+                ])
+                card.run(shake)
+            }
+
+            let msg = SKLabelNode(text: "Complete Level \(config.level - 1) first!")
+            msg.fontSize = 16
+            msg.fontName = "ChalkboardSE-Bold"
+            msg.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
+            msg.verticalAlignmentMode = .center
+            msg.position = CGPoint(x: size.width / 2, y: size.height * 0.30)
+            msg.zPosition = 10
+            addChild(msg)
+            msg.run(SKAction.sequence([
+                SKAction.wait(forDuration: 1.5),
+                SKAction.fadeOut(withDuration: 0.3),
+                SKAction.removeFromParent()
+            ]))
+            return
+        }
+
+        // Show unfreeze popup
+        let popup = UnfreezePopupNode(config: config, progress: progress, sceneSize: size)
+        popup.onUnfreezeComplete = { [weak self] cfg in
+            self?.unfreezePopup = nil
+            self?.onLevelSelected?(cfg)
+        }
+        popup.onDismiss = { [weak self] in
+            self?.unfreezePopup = nil
+        }
+        addChild(popup)
+        unfreezePopup = popup
     }
 
     // MARK: - Level strip
@@ -204,11 +325,48 @@ class LandingScene: SKScene {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
 
-        // If it was a tap (not a drag), check for level selection
+        // If it was a tap (not a drag), check for interactions
         if !isDragging {
+            // Unfreeze popup takes priority
+            if let popup = unfreezePopup {
+                popup.handleTap()
+                return
+            }
+
             let location = touch.location(in: self)
             let tappedNodes = nodes(at: location)
 
+            // Difficulty dropdown
+            for node in tappedNodes {
+                // Dropdown option selected
+                if let name = node.name, name.starts(with: "diffOption_") {
+                    let numStr = name.replacingOccurrences(of: "diffOption_", with: "")
+                    if let num = Int(numStr) {
+                        progress.quizGrade = num
+                        progress.save()
+                        difficultyLabel?.text = "Quiz Grade \(num)  ▼"
+                        hideDifficultyDropdown()
+                        return
+                    }
+                }
+                // Toggle dropdown
+                if node.name == "diffToggle" {
+                    if difficultyDropdown != nil {
+                        hideDifficultyDropdown()
+                    } else {
+                        showDifficultyDropdown()
+                    }
+                    return
+                }
+            }
+
+            // Tap elsewhere closes dropdown
+            if difficultyDropdown != nil {
+                hideDifficultyDropdown()
+                return
+            }
+
+            // Level selection
             for node in tappedNodes {
                 guard let name = node.name, name.starts(with: "level_") else { continue }
                 let levelStr = name.replacingOccurrences(of: "level_", with: "")
@@ -216,7 +374,11 @@ class LandingScene: SKScene {
                 guard let config = LevelConfig.config(for: levelNum) else { continue }
 
                 if progress.isLevelUnlocked(levelNum) {
+                    // Already unlocked — play it
                     onLevelSelected?(config)
+                } else {
+                    // Frozen — check prerequisites and show unfreeze
+                    handleFrozenLevelTap(config)
                 }
                 return
             }

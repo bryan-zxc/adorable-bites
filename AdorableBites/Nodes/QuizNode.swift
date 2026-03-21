@@ -4,17 +4,23 @@ class QuizNode: SKNode {
 
     private let background: SKShapeNode
     private let correctAnswer: Int
+    let rewardAmount: Int  // snowflakes earned on correct = min(A, B)
     private var typedAnswer: String = ""
     private let answerLabel: SKLabelNode
     private let answerBox: SKShapeNode
     private var onCorrect: (() -> Void)?
     private var onWrong: (() -> Void)?
 
-    init(sceneSize: CGSize) {
-        // Generate question: randomly either "X + 1" or "1 + X"
-        let number = Int.random(in: 0...9)
-        correctAnswer = number + 1
-        let questionText = Bool.random() ? "What is \(number) + 1?" : "What is 1 + \(number)?"
+    init(sceneSize: CGSize, difficulty: Int = 1) {
+        // Generate question: A + B where A = random(1-9), B = random(1-difficulty)
+        let a = Int.random(in: 1...9)
+        let b = Int.random(in: 1...max(1, difficulty))
+        rewardAmount = min(a, b)
+        correctAnswer = a + b
+
+        // Randomly swap ordering for display
+        let (left, right) = Bool.random() ? (a, b) : (b, a)
+        let questionText = "What is \(left) + \(right)?"
 
         // Dimmed overlay
         background = SKShapeNode(rectOf: sceneSize)
@@ -42,7 +48,7 @@ class QuizNode: SKNode {
 
         addChild(background)
 
-        // Dora on the left — fills the left section
+        // Dora on the left
         let doraTexture = SKTexture(imageNamed: "dora")
         let dora = SKSpriteNode(texture: doraTexture)
         let doraHeight = sceneSize.height * 0.7
@@ -52,9 +58,9 @@ class QuizNode: SKNode {
         dora.zPosition = 1
         addChild(dora)
 
-        // Quiz card — centre-right area
+        // Quiz card — taller to fit reward hint
         let cardX: CGFloat = 80
-        let card = SKShapeNode(rectOf: CGSize(width: 380, height: 460), cornerRadius: 20)
+        let card = SKShapeNode(rectOf: CGSize(width: 380, height: 500), cornerRadius: 20)
         card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
         card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
         card.lineWidth = 3
@@ -67,8 +73,28 @@ class QuizNode: SKNode {
         questionLabel.fontName = "AvenirNext-Bold"
         questionLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         questionLabel.verticalAlignmentMode = .center
-        questionLabel.position = CGPoint(x: cardX, y: 175)
+        questionLabel.position = CGPoint(x: cardX, y: 195)
         addChild(questionLabel)
+
+        // Reward hint with snowflake icon
+        let hintNode = SKNode()
+        hintNode.position = CGPoint(x: cardX, y: 160)
+        hintNode.zPosition = 1
+        addChild(hintNode)
+
+        let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
+        snowIcon.size = CGSize(width: 16, height: 16)
+        snowIcon.position = CGPoint(x: -20, y: 0)
+        hintNode.addChild(snowIcon)
+
+        let rewardHint = SKLabelNode(text: "+\(rewardAmount)")
+        rewardHint.fontSize = 16
+        rewardHint.fontName = "AvenirNext-Bold"
+        rewardHint.fontColor = UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 0.8)
+        rewardHint.verticalAlignmentMode = .center
+        rewardHint.horizontalAlignmentMode = .left
+        rewardHint.position = CGPoint(x: -8, y: 0)
+        hintNode.addChild(rewardHint)
 
         // Answer box
         answerBox.position = CGPoint(x: cardX, y: 115)
@@ -76,22 +102,13 @@ class QuizNode: SKNode {
         answerLabel.position = CGPoint(x: cardX, y: 115)
         addChild(answerLabel)
 
-        // Number pad: 1-9 in 3x3 grid, 0 and GO below
+        // Number pad
         let buttonSize: CGFloat = 60
         let padSpacing: CGFloat = 10
         let padStartX = cardX - (buttonSize + padSpacing)
         let padStartY: CGFloat = 50
 
-        // Row 1: 1 2 3
-        // Row 2: 4 5 6
-        // Row 3: 7 8 9
-        // Row 4: [clear] 0 [GO]
-        let digits = [
-            [1, 2, 3],
-            [4, 5, 6],
-            [7, 8, 9]
-        ]
-
+        let digits = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
         for (row, rowDigits) in digits.enumerated() {
             for (col, digit) in rowDigits.enumerated() {
                 let x = padStartX + CGFloat(col) * (buttonSize + padSpacing)
@@ -100,7 +117,6 @@ class QuizNode: SKNode {
             }
         }
 
-        // Bottom row: clear, 0, GO
         let bottomY = padStartY - 3.0 * (buttonSize + padSpacing)
         addNumberButton(digit: "⌫", position: CGPoint(x: padStartX, y: bottomY), size: buttonSize, name: "numpad_clear")
         addNumberButton(digit: "0", position: CGPoint(x: padStartX + (buttonSize + padSpacing), y: bottomY), size: buttonSize, name: "numpad_0")
@@ -176,7 +192,6 @@ class QuizNode: SKNode {
                 return true
             }
 
-            // Digit pressed — only allow up to 2 digits
             if typedAnswer.count < 2 {
                 typedAnswer += action
                 answerLabel.text = typedAnswer
@@ -184,7 +199,6 @@ class QuizNode: SKNode {
             return true
         }
 
-        // Tap on background dismisses nothing — quiz must be answered
         return true
     }
 

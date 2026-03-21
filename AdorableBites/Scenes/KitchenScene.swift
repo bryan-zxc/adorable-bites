@@ -812,6 +812,11 @@ class KitchenScene: SKScene {
         doorQueue.remove(at: index)
         doorQueueData.remove(at: index)
 
+        // Try to spawn the next customer immediately
+        if canSpawnMore {
+            spawnCustomer()
+        }
+
         checkGameEnd()
     }
 
@@ -878,8 +883,8 @@ class KitchenScene: SKScene {
         let tappedNodes = nodes(at: location)
 
         // Unfreeze popup — tap anywhere to progress
-        if unfreezeContainer != nil {
-            handleUnfreezeTap()
+        if let popup = unfreezePopup {
+            popup.handleTap()
             return
         }
 
@@ -935,7 +940,36 @@ class KitchenScene: SKScene {
             return
         }
 
-        // 0b. Next button (game end screen)
+        // 0b. Quiz difficulty dropdown on end screen
+        for node in tappedNodes {
+            if let name = node.name, name.starts(with: "endDiffOpt_") {
+                let numStr = name.replacingOccurrences(of: "endDiffOpt_", with: "")
+                if let num = Int(numStr) {
+                    progress.quizGrade = num
+                    progress.save()
+                    endScreenDiffLabel?.text = "Quiz Grade \(num)  ▼"
+                    endDiffDropdown?.removeFromParent()
+                    endDiffDropdown = nil
+                    return
+                }
+            }
+            if node.name == "endDiffToggle" {
+                if endDiffDropdown != nil {
+                    endDiffDropdown?.removeFromParent()
+                    endDiffDropdown = nil
+                } else {
+                    showEndDiffDropdown()
+                }
+                return
+            }
+        }
+        if endDiffDropdown != nil {
+            endDiffDropdown?.removeFromParent()
+            endDiffDropdown = nil
+            return
+        }
+
+        // 0c. Next button (game end screen)
         for node in tappedNodes {
             if node.name == "replayButton" {
                 onReplay?()
@@ -1221,17 +1255,17 @@ class KitchenScene: SKScene {
     private func handleIngredientTap(_ ingredientNode: IngredientNode) {
         guard activeQuiz == nil else { return }
         guard pickedUpIngredient == nil else { return }
-        guard customerData.first?.order != nil else { return }
 
         // Show quiz
         pendingIngredientNode = ingredientNode
-        let quiz = QuizNode(sceneSize: size)
+        let quiz = QuizNode(sceneSize: size, difficulty: progress.quizGrade)
+        let reward = quiz.rewardAmount
         quiz.position = CGPoint(x: size.width / 2, y: size.height / 2)
         quiz.configure(
             onCorrect: { [weak self] in
                 guard let self, let node = self.pendingIngredientNode else { return }
-                self.hudNode.addSnowflakes(1)
-                self.hudNode.showSnowflakeChange(+1)
+                self.hudNode.addSnowflakes(reward)
+                self.hudNode.showSnowflakeChange(reward)
                 self.enterPickupMode(node)
                 self.activeQuiz = nil
                 self.pendingIngredientNode = nil
@@ -1385,8 +1419,9 @@ class KitchenScene: SKScene {
             removeDishFromBench(for: customerNode)
 
             if autoClear {
-                // Auto-clear: skip dirty plate, just add to sink directly
-                addDirtyDish()
+                // Auto-clear: plate is instantly recycled (no manual clearing or washing)
+                platesRemaining += 1
+                updatePlateStack()
             } else {
                 placeDirtyPlateOnBench(seatIndex: seatIndex)
             }
@@ -1432,15 +1467,15 @@ class KitchenScene: SKScene {
         let hasDoorCustomers = !doorQueue.isEmpty
         let hasDirtySeats = (0..<chairCount).contains { isSeatDirty($0) }
 
-        // Condition 1: no customers, no door queue, no dirty seats → all done
-        if !hasCustomers && !hasDoorCustomers && !hasDirtySeats {
+        // Condition 1: no customers, no door queue, no dirty seats, no more to spawn → all done
+        if !hasCustomers && !hasDoorCustomers && !hasDirtySeats && !canSpawnMore {
             handleGameOver()
             return
         }
 
-        // Condition 2: no plates, no eating customers, no dirty seats, but someone waiting
+        // Condition 2: no plates, no eating customers, no dirty seats, no more spawning possible
         let hasEatingCustomers = customerNodes.contains { $0.isEating }
-        if platesRemaining <= 0 && !hasEatingCustomers && !hasDirtySeats && !hasDoorCustomers && hasCustomers {
+        if platesRemaining <= 0 && !hasEatingCustomers && !hasDirtySeats && !hasDoorCustomers && !canSpawnMore {
             handleGameOver()
             return
         }
@@ -1560,7 +1595,8 @@ class KitchenScene: SKScene {
         card.name = "unservedCard"
         addChild(card)
 
-        let title = SKLabelNode(text: "No plates left!")
+        let titleText = platesRemaining <= 0 ? "No plates left!" : "Time's up!"
+        let title = SKLabelNode(text: titleText)
         title.fontSize = 26
         title.fontName = "AvenirNext-Bold"
         title.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
@@ -1614,7 +1650,7 @@ class KitchenScene: SKScene {
         addChild(overlay)
 
         // Card
-        let cardH: CGFloat = 520
+        let cardH: CGFloat = 580
         let card = SKShapeNode(rectOf: CGSize(width: 460, height: cardH), cornerRadius: 24)
         card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
         card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
@@ -1629,7 +1665,7 @@ class KitchenScene: SKScene {
         let doraHeight: CGFloat = 200
         let doraScale = doraHeight / doraTexture.size().height
         dora.size = CGSize(width: doraTexture.size().width * doraScale, height: doraHeight)
-        dora.position = CGPoint(x: cx, y: size.height / 2 + 130)
+        dora.position = CGPoint(x: cx, y: size.height / 2 + 175)
         dora.zPosition = 92
         addChild(dora)
 
@@ -1639,12 +1675,12 @@ class KitchenScene: SKScene {
         message.fontName = "AvenirNext-Bold"
         message.fontColor = brown
         message.verticalAlignmentMode = .center
-        message.position = CGPoint(x: cx, y: size.height / 2 + 5)
+        message.position = CGPoint(x: cx, y: size.height / 2 + 45)
         message.zPosition = 92
         addChild(message)
 
         // --- Current totals row ---
-        let totalsY = size.height / 2 - 50
+        let totalsY = size.height / 2 - 10
         let totalsLabel = SKLabelNode(text: "Your total:")
         totalsLabel.fontSize = 14
         totalsLabel.fontName = "AvenirNext-Medium"
@@ -1690,7 +1726,7 @@ class KitchenScene: SKScene {
         addChild(snowTotalLabel)
 
         // --- Earnings row ---
-        let earnY = size.height / 2 - 95
+        let earnY = size.height / 2 - 60
 
         // + $X earned
         let moneyEarn = SKLabelNode(text: "+ $\(earnedDollars)")
@@ -1713,7 +1749,7 @@ class KitchenScene: SKScene {
         addChild(snowEarn)
 
         // --- Bonus snowflakes (1-3 icons) ---
-        let bonusY = earnY - 55
+        let bonusY = earnY - 60
         let bonusLabel = SKLabelNode(text: "Bonus:")
         bonusLabel.fontSize = 14
         bonusLabel.fontName = "AvenirNext-Medium"
@@ -1791,14 +1827,100 @@ class KitchenScene: SKScene {
                 progress.totalDollars += earnedDollars
                 progress.totalSnowflakes += earnedSnowflakes
                 progress.save()
-                showEndScreenButtons(cardH: cardH)
+                showEndScreenButtons(cardH: cardH, bonusY: bonusY)
             }
         ]))
 
     }
 
-    private func showEndScreenButtons(cardH: CGFloat) {
+    private var endScreenDiffLabel: SKLabelNode?
+    private var endDiffDropdown: SKNode?
+
+    private func showEndDiffDropdown() {
+        endDiffDropdown?.removeFromParent()
+
         let brown = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+        let container = SKNode()
+        container.zPosition = 95
+        addChild(container)
+        endDiffDropdown = container
+
+        let itemH: CGFloat = 30
+        let dropW: CGFloat = 160
+        // Position dropdown above the toggle button
+        let startY = size.height / 2 - 160  // above the buttons area
+
+        for i in 1...9 {
+            let y = startY + CGFloat(9 - i) * itemH
+
+            let bg = SKShapeNode(rectOf: CGSize(width: dropW, height: itemH - 2), cornerRadius: 6)
+            bg.fillColor = i == progress.quizGrade
+                ? UIColor(red: 0.85, green: 0.80, blue: 0.70, alpha: 0.98)
+                : UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
+            bg.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 0.5)
+            bg.lineWidth = 1
+            bg.position = CGPoint(x: size.width / 2, y: y)
+            bg.name = "endDiffOpt_\(i)"
+            container.addChild(bg)
+
+            let label = SKLabelNode(text: "Level \(i)")
+            label.fontSize = 13
+            label.fontName = i == progress.quizGrade ? "AvenirNext-Bold" : "AvenirNext-Medium"
+            label.fontColor = brown
+            label.verticalAlignmentMode = .center
+            label.position = .zero
+            label.name = "endDiffOpt_\(i)"
+            bg.addChild(label)
+        }
+    }
+
+    private func showEndScreenButtons(cardH: CGFloat, bonusY: CGFloat = 0) {
+        let brown = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+
+        // Quiz difficulty dropdown button above buttons
+        let diffY = size.height / 2 - cardH / 2 + 100
+        let diffBg = SKShapeNode(rectOf: CGSize(width: 160, height: 32), cornerRadius: 10)
+        diffBg.fillColor = UIColor(red: 0.92, green: 0.88, blue: 0.80, alpha: 1.0)
+        diffBg.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
+        diffBg.lineWidth = 1.5
+        diffBg.position = CGPoint(x: size.width / 2, y: diffY)
+        diffBg.zPosition = 92
+        diffBg.name = "endDiffToggle"
+        addChild(diffBg)
+
+        let diffLabel = SKLabelNode(text: "Quiz Grade \(progress.quizGrade)  ▼")
+        diffLabel.fontSize = 13
+        diffLabel.fontName = "AvenirNext-Bold"
+        diffLabel.fontColor = brown
+        diffLabel.verticalAlignmentMode = .center
+        diffLabel.position = CGPoint(x: 0, y: 0)
+        diffLabel.name = "endDiffToggle"
+        diffBg.addChild(diffLabel)
+        endScreenDiffLabel = diffLabel
+
+        // One-time nudge to upgrade quiz grade (shows at end of L3 if still on grade 1)
+        let thisLevel = levelConfig?.level ?? 0
+        if thisLevel == 3 && !progress.seenQuizGradeNudge && progress.quizGrade <= 1 {
+            let nudgeY = (bonusY + diffY) / 2  // centred between bonus and quiz grade
+            let nudge = SKLabelNode(text: "Try Grade 2 for more snowflakes!")
+            nudge.fontSize = 14
+            nudge.fontName = "ChalkboardSE-Bold"
+            nudge.fontColor = UIColor(red: 0.7, green: 0.4, blue: 0.1, alpha: 1.0)
+            nudge.verticalAlignmentMode = .center
+            nudge.position = CGPoint(x: size.width / 2, y: nudgeY)
+            nudge.zPosition = 92
+            addChild(nudge)
+
+            let pulse = SKAction.sequence([
+                SKAction.fadeAlpha(to: 0.5, duration: 0.6),
+                SKAction.fadeAlpha(to: 1.0, duration: 0.6)
+            ])
+            nudge.run(SKAction.repeatForever(pulse))
+
+            progress.seenQuizGradeNudge = true
+            progress.save()
+        }
+
         let btnStyle: (SKShapeNode) -> Void = { btn in
             btn.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 1.0)
             btn.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
@@ -1860,9 +1982,7 @@ class KitchenScene: SKScene {
         }
     }
 
-    private var unfreezeContainer: SKNode?
-    private var unfreezeNextConfig: LevelConfig?
-    private var unfreezePhase: Int = 0  // 0 = frozen (tap to unfreeze), 1 = unfrozen (tap to play)
+    private var unfreezePopup: UnfreezePopupNode?
 
     private func handleNextLevel() {
         let currentLevel = levelConfig?.level ?? 1
@@ -1871,291 +1991,19 @@ class KitchenScene: SKScene {
         if progress.isLevelUnlocked(nextConfig.level) {
             onNextLevel?(nextConfig)
         } else {
-            showUnfreezePopup(for: nextConfig)
+            let popup = UnfreezePopupNode(config: nextConfig, progress: progress, sceneSize: size)
+            popup.onUnfreezeComplete = { [weak self] cfg in
+                self?.unfreezePopup = nil
+                self?.onNextLevel?(cfg)
+            }
+            popup.onDismiss = { [weak self] in
+                self?.unfreezePopup = nil
+            }
+            addChild(popup)
+            unfreezePopup = popup
         }
     }
 
-    private func showUnfreezePopup(for config: LevelConfig) {
-        unfreezeNextConfig = config
-        unfreezePhase = 0
-
-        let container = SKNode()
-        container.zPosition = 100
-        addChild(container)
-        unfreezeContainer = container
-
-        // Full dim overlay — covers everything including game end screen
-        let overlay = SKShapeNode(rectOf: CGSize(width: size.width * 2, height: size.height * 2))
-        overlay.fillColor = UIColor(white: 0, alpha: 0.75)
-        overlay.strokeColor = .clear
-        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        container.addChild(overlay)
-
-        // New ingredients for this level
-        let newIngs = config.newIngredients
-        let hasNewIngs = !newIngs.isEmpty
-        let cardWidth: CGFloat = hasNewIngs ? 450 : 300
-
-        // Card background
-        let card = SKShapeNode(rectOf: CGSize(width: cardWidth, height: 380), cornerRadius: 24)
-        card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
-        card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
-        card.lineWidth = 3
-        card.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        container.addChild(card)
-
-        // "Level X" title
-        let title = SKLabelNode(text: "Level \(config.level)")
-        title.fontSize = 24
-        title.fontName = "ChalkboardSE-Bold"
-        title.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
-        title.verticalAlignmentMode = .center
-        title.position = CGPoint(x: 0, y: 145)
-        card.addChild(title)
-
-        // Content area — level frame + optional ingredient(s) side by side
-        let frameSize: CGFloat = 130
-        let contentY: CGFloat = 30
-        let frameX: CGFloat = hasNewIngs ? -80 : 0
-
-        // Frozen level frame
-        let frozenFrame = SKSpriteNode(texture: SKTexture(imageNamed: "level_frame_frozen"))
-        frozenFrame.size = CGSize(width: frameSize, height: frameSize)
-        frozenFrame.position = CGPoint(x: frameX, y: contentY)
-        frozenFrame.name = "unfreezeFrame"
-        card.addChild(frozenFrame)
-
-        // Level number — icy blue
-        let numLabel = SKLabelNode(text: "\(config.level)")
-        numLabel.fontSize = 48
-        numLabel.fontName = "ChalkboardSE-Bold"
-        numLabel.fontColor = UIColor(red: 0.55, green: 0.7, blue: 0.85, alpha: 0.8)
-        numLabel.verticalAlignmentMode = .center
-        numLabel.horizontalAlignmentMode = .center
-        numLabel.position = CGPoint(x: 0, y: 2)
-        numLabel.zPosition = 1
-        numLabel.name = "unfreezeNumber"
-        frozenFrame.addChild(numLabel)
-
-        // New ingredients — same size as level frame, evenly spaced
-        if hasNewIngs {
-            let frozenOverlayTex = SKTexture(imageNamed: "frozen_overlay")
-            let ingFrameSize = frameSize  // same size as level card
-            let plusGap: CGFloat = 40  // space for the + sign
-            let ingStartX = frameX + frameSize / 2 + plusGap + frameSize / 2 + 20
-
-            for (i, ingName) in newIngs.enumerated() {
-                let ix = ingStartX + CGFloat(i) * (ingFrameSize + plusGap)
-
-                // Ingredient image — same size as level frame
-                let ingSprite = SKSpriteNode(texture: SKTexture(imageNamed: ingName))
-                ingSprite.size = CGSize(width: ingFrameSize * 0.7, height: ingFrameSize * 0.7)
-                ingSprite.position = CGPoint(x: ix, y: contentY)
-                ingSprite.zPosition = 1
-                ingSprite.name = "unfreezeIng_\(ingName)"
-                card.addChild(ingSprite)
-
-                // Frozen overlay on top — same size as level frame
-                let iceOverlay = SKSpriteNode(texture: frozenOverlayTex)
-                iceOverlay.size = CGSize(width: ingFrameSize, height: ingFrameSize)
-                iceOverlay.position = CGPoint(x: ix, y: contentY)
-                iceOverlay.zPosition = 2
-                iceOverlay.name = "unfreezeIce_\(ingName)"
-                card.addChild(iceOverlay)
-
-                // Pulse animation — same as level frame
-                let ingPulse = SKAction.sequence([
-                    SKAction.scale(to: 1.05, duration: 0.5),
-                    SKAction.scale(to: 1.0, duration: 0.5)
-                ])
-                iceOverlay.run(SKAction.repeatForever(ingPulse))
-
-                // Ingredient name below
-                let nameLabel = SKLabelNode(text: ingName)
-                nameLabel.fontSize = 14
-                nameLabel.fontName = "ChalkboardSE-Bold"
-                nameLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
-                nameLabel.verticalAlignmentMode = .top
-                nameLabel.position = CGPoint(x: ix, y: contentY - ingFrameSize / 2 - 6)
-                nameLabel.zPosition = 1
-                card.addChild(nameLabel)
-            }
-
-            // "+" between frame and first ingredient — centred in the gap
-            let plusX = frameX + frameSize / 2 + plusGap / 2 + 10
-            let plusLabel = SKLabelNode(text: "+")
-            plusLabel.fontSize = 32
-            plusLabel.fontName = "AvenirNext-Bold"
-            plusLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 0.5)
-            plusLabel.verticalAlignmentMode = .center
-            plusLabel.position = CGPoint(x: plusX, y: contentY)
-            card.addChild(plusLabel)
-        }
-
-        // Snowflake cost — total (level + ingredients)
-        let cost = max(1, config.unlockCost)
-
-        let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
-        snowIcon.size = CGSize(width: 28, height: 28)
-        snowIcon.position = CGPoint(x: -18, y: -80)
-        snowIcon.name = "unfreezeCostIcon"
-        card.addChild(snowIcon)
-
-        let costLabel = SKLabelNode(text: "-\(cost)")
-        costLabel.fontSize = 24
-        costLabel.fontName = "AvenirNext-Bold"
-        costLabel.fontColor = UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 1.0)
-        costLabel.verticalAlignmentMode = .center
-        costLabel.horizontalAlignmentMode = .left
-        costLabel.position = CGPoint(x: 4, y: -80)
-        costLabel.name = "unfreezeCostLabel"
-        card.addChild(costLabel)
-
-        // "Tap to unfreeze!" hint
-        let hint = SKLabelNode(text: "Tap to unfreeze!")
-        hint.fontSize = 18
-        hint.fontName = "ChalkboardSE-Bold"
-        hint.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
-        hint.verticalAlignmentMode = .center
-        hint.position = CGPoint(x: 0, y: -130)
-        hint.name = "unfreezeHint"
-        card.addChild(hint)
-
-        // Pulse animation on the frame
-        let pulse = SKAction.sequence([
-            SKAction.scale(to: 1.05, duration: 0.5),
-            SKAction.scale(to: 1.0, duration: 0.5)
-        ])
-        frozenFrame.run(SKAction.repeatForever(pulse))
-    }
-
-    private func findNode(named name: String, in node: SKNode) -> SKNode? {
-        if node.name == name { return node }
-        for child in node.children {
-            if let found = findNode(named: name, in: child) { return found }
-        }
-        return nil
-    }
-
-    private func handleUnfreezeTap() {
-        guard let container = unfreezeContainer,
-              let config = unfreezeNextConfig else { return }
-
-        if unfreezePhase == 0 {
-            // Phase 0: unfreeze
-            let cost = max(1, config.unlockCost)
-            guard progress.unlockLevel(config.level, cost: cost) else {
-                // Can't afford — show message with current balance, then dismiss back to end screen
-                if let hint = findNode(named: "unfreezeHint", in: container) as? SKLabelNode {
-                    hint.text = "Not enough! You have \(progress.totalSnowflakes) snowflakes"
-                    hint.fontColor = UIColor(red: 0.8, green: 0.15, blue: 0.15, alpha: 1.0)
-                }
-                if let frame = findNode(named: "unfreezeFrame", in: container) {
-                    let shake = SKAction.sequence([
-                        SKAction.moveBy(x: -8, y: 0, duration: 0.05),
-                        SKAction.moveBy(x: 16, y: 0, duration: 0.05),
-                        SKAction.moveBy(x: -16, y: 0, duration: 0.05),
-                        SKAction.moveBy(x: 8, y: 0, duration: 0.05)
-                    ])
-                    frame.run(shake)
-                }
-                // Auto-dismiss after 1.5s back to end screen
-                run(SKAction.sequence([
-                    SKAction.wait(forDuration: 1.5),
-                    SKAction.run { [self] in
-                        container.removeFromParent()
-                        unfreezeContainer = nil
-                        unfreezeNextConfig = nil
-                    }
-                ]))
-                return
-            }
-
-            // Swap frozen frame to normal frame with magic sparkle effect
-            if let frame = findNode(named: "unfreezeFrame", in: container) as? SKSpriteNode {
-                frame.removeAllActions()
-                let framePos = frame.parent?.convert(frame.position, to: container) ?? frame.position
-
-                // Flash white
-                let flash = SKShapeNode(rectOf: CGSize(width: 160, height: 160), cornerRadius: 10)
-                flash.fillColor = .white
-                flash.strokeColor = .clear
-                flash.alpha = 0
-                flash.position = framePos
-                flash.zPosition = 10
-                container.addChild(flash)
-
-                // Sparkle particles around the frame
-                for _ in 0..<12 {
-                    let spark = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
-                    spark.size = CGSize(width: 16, height: 16)
-                    spark.position = framePos
-                    spark.zPosition = 11
-                    spark.alpha = 1.0
-                    container.addChild(spark)
-
-                    let angle = CGFloat.random(in: 0...(.pi * 2))
-                    let dist = CGFloat.random(in: 60...120)
-                    let dx = cos(angle) * dist
-                    let dy = sin(angle) * dist
-
-                    spark.run(SKAction.sequence([
-                        SKAction.group([
-                            SKAction.moveBy(x: dx, y: dy, duration: 0.5),
-                            SKAction.fadeOut(withDuration: 0.5),
-                            SKAction.scale(to: 0.3, duration: 0.5)
-                        ]),
-                        SKAction.removeFromParent()
-                    ]))
-                }
-
-                // Flash + swap texture
-                flash.run(SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.8, duration: 0.1),
-                    SKAction.run {
-                        frame.texture = SKTexture(imageNamed: "level_frame")
-                        if let num = frame.childNode(withName: "unfreezeNumber") as? SKLabelNode {
-                            num.fontColor = UIColor(red: 0.5, green: 0.3, blue: 0.1, alpha: 1.0)
-                        }
-                    },
-                    SKAction.fadeOut(withDuration: 0.3),
-                    SKAction.removeFromParent()
-                ]))
-
-                // Bounce the frame
-                frame.run(SKAction.sequence([
-                    SKAction.scale(to: 1.2, duration: 0.15),
-                    SKAction.scale(to: 1.0, duration: 0.2)
-                ]))
-            }
-
-            // Remove ice overlays from new ingredients
-            for ingName in config.newIngredients {
-                if let iceOverlay = findNode(named: "unfreezeIce_\(ingName)", in: container) {
-                    iceOverlay.run(SKAction.sequence([
-                        SKAction.fadeOut(withDuration: 0.3),
-                        SKAction.removeFromParent()
-                    ]))
-                }
-            }
-
-            // Hide cost and update hint
-            findNode(named: "unfreezeCostIcon", in: container)?.run(SKAction.fadeOut(withDuration: 0.3))
-            findNode(named: "unfreezeCostLabel", in: container)?.run(SKAction.fadeOut(withDuration: 0.3))
-            if let hint = findNode(named: "unfreezeHint", in: container) as? SKLabelNode {
-                hint.text = "Tap to play!"
-            }
-
-            unfreezePhase = 1
-
-        } else {
-            // Phase 1: go to next level
-            container.removeFromParent()
-            unfreezeContainer = nil
-            unfreezeNextConfig = nil
-            onNextLevel?(config)
-        }
-    }
 
     private func restartGame() {
         removeAllChildren()
@@ -2300,6 +2148,9 @@ class KitchenScene: SKScene {
 
         if isSeatClear(seatIndex) {
             trySeatDoorCustomer()
+            if canSpawnMore {
+                spawnCustomer()
+            }
         }
         checkGameEnd()
     }
@@ -2337,6 +2188,9 @@ class KitchenScene: SKScene {
 
         if isSeatClear(seatIndex) {
             trySeatDoorCustomer()
+            if canSpawnMore {
+                spawnCustomer()
+            }
         }
         checkGameEnd()
     }
