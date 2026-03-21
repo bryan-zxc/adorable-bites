@@ -31,6 +31,12 @@ struct PanImageMapping {
             rawImage: "raw_batter_in_pan",
             cookedImage: "finished_pancake_in_pan"
         ),
+        Entry(
+            ingredientNames: ["bread"],
+            wasMixed: false,
+            rawImage: "raw_bread_in_pan",
+            cookedImage: "toast_in_pan"
+        ),
     ]
 
     static func images(for ingredients: [Ingredient], wasMixed: Bool) -> (raw: String, cooked: String) {

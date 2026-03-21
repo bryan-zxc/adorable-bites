@@ -18,7 +18,7 @@ class IngredientNode: SKNode {
         sprite.position = .zero
 
         nameLabel = SKLabelNode(text: ingredient.name)
-        nameLabel.fontSize = 9
+        nameLabel.fontSize = 14
         nameLabel.fontName = "AvenirNext-Bold"
         nameLabel.fontColor = UIColor(red: 0.3, green: 0.2, blue: 0.1, alpha: 1.0)
         nameLabel.verticalAlignmentMode = .center

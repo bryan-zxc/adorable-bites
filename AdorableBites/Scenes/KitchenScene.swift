@@ -36,9 +36,10 @@ class KitchenScene: SKScene {
     static let egg = Ingredient(name: "egg", colour: .systemOrange, imageName: "egg", cookTime: 8)
     static let milk = Ingredient(name: "milk", colour: .systemCyan, imageName: "milk", cookTime: 2)
     static let butter = Ingredient(name: "butter", colour: .systemYellow, imageName: "butter", cookTime: 2)
+    static let bread = Ingredient(name: "bread", colour: .brown, imageName: "bread", cookTime: 6)
     static let chocolate = Ingredient(name: "chocolate", colour: .brown, imageName: "chocolate", cookTime: 6)
 
-    static let allIngredients = [milk, egg, flour, butter, chocolate]
+    static let allIngredients = [egg, butter, bread, flour, milk]
 
     // MARK: - Recipes
 
@@ -66,7 +67,15 @@ class KitchenScene: SKScene {
         requiresMixing: true
     )
 
-    static let allRecipes = [pancakeRecipe, friedEggRecipe, scrambledEggRecipe]
+    static let panToastRecipe = Recipe(
+        name: "Pan Toast",
+        imageName: "pan_toast_plate",
+        requiredIngredients: [bread],
+        basePoints: 1,
+        requiresMixing: false
+    )
+
+    static let allRecipes = [pancakeRecipe, friedEggRecipe, scrambledEggRecipe, panToastRecipe]
 
     // MARK: - Customer pool
 
@@ -87,7 +96,7 @@ class KitchenScene: SKScene {
     // MARK: - Nodes
 
     private var ingredientShelfNodes: [IngredientNode] = []
-    private var mixerNode: MixerNode!
+    private var mixerNode: MixerNode?
     private var stoveTop: StoveTopNode!
     private var hudNode: HudNode!
     private var recipePanel: RecipePanelNode!
@@ -343,6 +352,66 @@ class KitchenScene: SKScene {
             arrow3.position = a3
             arrow3.zPosition = 2
             tutorialContainer.addChild(arrow3)
+        } else if !images.isEmpty {
+            // 1-2 images: simple layout to the right of Dora
+            let stepSize: CGFloat = images.count == 1 ? 250 : 150
+            let gap: CGFloat = 20
+            let doraRight = dora.position.x + dora.size.width / 2 + 20
+            let gridRight = size.width - padding - 20
+            let gridCentreX = (doraRight + gridRight) / 2
+            let gridCentreY = size.height / 2 - 20
+
+            let totalWidth = CGFloat(images.count) * stepSize + CGFloat(images.count - 1) * gap
+            let startX = gridCentreX - totalWidth / 2 + stepSize / 2
+
+            for (i, imgName) in images.enumerated() {
+                let cx = startX + CGFloat(i) * (stepSize + gap)
+
+                // White frame
+                let frame = SKShapeNode(rectOf: CGSize(width: stepSize + 6, height: stepSize + 6), cornerRadius: 8)
+                frame.fillColor = UIColor(white: 1, alpha: 0.3)
+                frame.strokeColor = UIColor(red: 0.8, green: 0.74, blue: 0.65, alpha: 1.0)
+                frame.lineWidth = 2
+                frame.position = CGPoint(x: cx, y: gridCentreY)
+                frame.zPosition = 1
+                tutorialContainer.addChild(frame)
+
+                // Step image
+                let tex = SKTexture(imageNamed: imgName)
+                let step = SKSpriteNode(texture: tex)
+                let texSize = tex.size()
+                let sc = min(stepSize / texSize.width, stepSize / texSize.height)
+                step.size = CGSize(width: texSize.width * sc, height: texSize.height * sc)
+                step.position = CGPoint(x: cx, y: gridCentreY)
+                step.zPosition = 2
+                tutorialContainer.addChild(step)
+
+                // Label below
+                if i < labels.count {
+                    let stepLabel = SKLabelNode(text: labels[i])
+                    stepLabel.fontSize = 14
+                    stepLabel.fontName = "ChalkboardSE-Bold"
+                    stepLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+                    stepLabel.verticalAlignmentMode = .top
+                    stepLabel.horizontalAlignmentMode = .center
+                    stepLabel.position = CGPoint(x: cx, y: gridCentreY - stepSize / 2 - 8)
+                    stepLabel.zPosition = 2
+                    tutorialContainer.addChild(stepLabel)
+                }
+            }
+
+            // Arrow between images if 2
+            if images.count == 2 {
+                let arrowColour = UIColor(red: 0.55, green: 0.45, blue: 0.3, alpha: 1.0)
+                let ax = (startX + startX + stepSize + gap) / 2
+                let arrow = SKLabelNode(text: "➜")
+                arrow.fontSize = 22
+                arrow.fontColor = arrowColour
+                arrow.verticalAlignmentMode = .center
+                arrow.position = CGPoint(x: ax, y: gridCentreY)
+                arrow.zPosition = 2
+                tutorialContainer.addChild(arrow)
+            }
         }
 
         // "Let's Cook!" button at the bottom
@@ -387,7 +456,13 @@ class KitchenScene: SKScene {
         setupBench()
         setupIngredientShelf()
         setupKitchenCounter()
-        setupMixer()
+        // Only show mixer if this level has recipes that require mixing
+        let hasMixingRecipes = levelConfig?.recipeNames.contains(where: { name in
+            KitchenScene.allRecipes.first { $0.name == name }?.requiresMixing == true
+        }) ?? false
+        if hasMixingRecipes {
+            setupMixer()
+        }
         setupStoveTop()
         setupPlateStack()
         setupSink()
@@ -447,38 +522,60 @@ class KitchenScene: SKScene {
     }
 
     private func setupIngredientShelf() {
-        let ingredientCount = CGFloat(KitchenScene.allIngredients.count)
+        // Show only ingredients needed by this level's recipes
+        let levelIngredients: [Ingredient]
+        if let config = levelConfig {
+            let recipeNames = Set(config.recipeNames)
+            var seen = Set<String>()
+            var ingredients: [Ingredient] = []
+            for recipe in KitchenScene.allRecipes where recipeNames.contains(recipe.name) {
+                for ing in recipe.requiredIngredients {
+                    if seen.insert(ing.name).inserted {
+                        ingredients.append(ing)
+                    }
+                }
+            }
+            levelIngredients = ingredients
+        } else {
+            levelIngredients = KitchenScene.allIngredients
+        }
 
-        let pantryPadding: CGFloat = 15
-        let pantryWidth = recipePanelLeftEdge - benchRightEdge - pantryPadding * 2
-        let pantryHeight: CGFloat = 180
+        let count = levelIngredients.count
+
+        // Build pantry from individual slot images
+        // Slot image is portrait (~78:100 ratio). Compartment is top ~68%, name tag is bottom ~32%.
+        let slotTexture = SKTexture(imageNamed: "cupboard_slot")
+        let slotWidth: CGFloat = 130
+        let slotHeight: CGFloat = slotWidth * (1168.0 / 912.0)  // preserve image aspect ratio
+        let slotGap: CGFloat = 4
+        let totalWidth = CGFloat(count) * slotWidth + CGFloat(count - 1) * slotGap
+        let shelfY = size.height - 105
         let pantryCentreX = (benchRightEdge + recipePanelLeftEdge) / 2
-        let shelfY = size.height - 100
+        let startX = pantryCentreX - totalWidth / 2 + slotWidth / 2
 
-        let pantryTexture = SKTexture(imageNamed: "pantry_cupboard")
-        let pantry = SKSpriteNode(texture: pantryTexture)
-        pantry.size = CGSize(width: pantryWidth, height: pantryHeight)
-        pantry.position = CGPoint(x: pantryCentreX, y: shelfY)
-        pantry.zPosition = -1
-        gameLayer.addChild(pantry)
+        let compartmentRatio: CGFloat = 0.68  // top portion is the square compartment
+        let tagRatio: CGFloat = 0.32  // bottom portion is the name tag
 
-        let compartmentWidth = pantryWidth / ingredientCount
-        let pantryLeftEdge = benchRightEdge + pantryPadding
-        let pantryInset: CGFloat = 22
-        let startX = pantryLeftEdge + pantryInset + (pantryWidth - pantryInset * 2) / ingredientCount / 2
+        for (index, ingredient) in levelIngredients.enumerated() {
+            let slotX = startX + CGFloat(index) * (slotWidth + slotGap)
 
-        let ingredientY = shelfY + pantryHeight * 0.125
-        let labelOffsetY = -pantryHeight * 0.5
-        let spriteSize = min(compartmentWidth, pantryHeight * 0.75) * 0.7
-        let insetCompartmentWidth = (pantryWidth - pantryInset * 2) / ingredientCount
-        for (index, ingredient) in KitchenScene.allIngredients.enumerated() {
-            let ingredientX = startX + CGFloat(index) * insetCompartmentWidth
-            let tagInset = pantryInset * 0.5
-            let tagCompartmentWidth = (pantryWidth - tagInset * 2) / ingredientCount
-            let tagX = pantryLeftEdge + tagInset + tagCompartmentWidth * (CGFloat(index) + 0.5)
-            let labelOffsetX = tagX - ingredientX
-            let node = IngredientNode(ingredient: ingredient, spriteSize: spriteSize, labelOffsetX: labelOffsetX, labelOffsetY: labelOffsetY)
-            node.position = CGPoint(x: ingredientX, y: ingredientY)
+            // Slot background
+            let slot = SKSpriteNode(texture: slotTexture)
+            slot.size = CGSize(width: slotWidth, height: slotHeight)
+            slot.position = CGPoint(x: slotX, y: shelfY)
+            slot.zPosition = -1
+            gameLayer.addChild(slot)
+
+            // Ingredient centred in the square compartment (upper portion)
+            let compartmentCentreY = shelfY + (slotHeight * tagRatio / 2)
+            let spriteSize = slotWidth * 0.6
+            let node = IngredientNode(
+                ingredient: ingredient,
+                spriteSize: spriteSize,
+                labelOffsetX: 0,
+                labelOffsetY: -(slotHeight * compartmentRatio * 0.5 + slotHeight * tagRatio * 0.5)
+            )
+            node.position = CGPoint(x: slotX, y: compartmentCentreY)
             node.zPosition = 1
             gameLayer.addChild(node)
             ingredientShelfNodes.append(node)
@@ -497,10 +594,11 @@ class KitchenScene: SKScene {
     }
 
     private func setupMixer() {
-        mixerNode = MixerNode(size: CGSize(width: 150, height: 150))
-        mixerNode.position = CGPoint(x: mixerX, y: workstationY + 10)
-        mixerNode.zPosition = 1
-        gameLayer.addChild(mixerNode)
+        let mixer = MixerNode(size: CGSize(width: 150, height: 150))
+        mixer.position = CGPoint(x: mixerX, y: workstationY + 10)
+        mixer.zPosition = 1
+        gameLayer.addChild(mixer)
+        mixerNode = mixer
     }
 
     private func setupPlateStack() {
@@ -581,6 +679,27 @@ class KitchenScene: SKScene {
 
     // MARK: - Customer seating
 
+    /// Customer patience adjusted for expected concurrency.
+    /// More concurrent customers = more patience (20% extra per additional concurrent customer).
+    private func adjustedPatience(for recipe: Recipe) -> TimeInterval {
+        let baseWait = recipe.waitTime
+        let chairs = levelConfig?.chairCount ?? 1
+        let interval = levelConfig?.arrivalInterval ?? 0
+
+        // Average service time: how long a customer occupies a seat
+        let avgServiceTime = Double(chairs) * 15.0 + baseWait  // rough estimate
+
+        // Expected concurrent customers from Poisson arrival rate
+        let concurrent: Int
+        if interval > 0 {
+            concurrent = min(chairs, Int(ceil(avgServiceTime / interval)))
+        } else {
+            concurrent = 1  // sequential arrival
+        }
+
+        return baseWait + Double(concurrent - 1) * baseWait * 0.2
+    }
+
     private func seatPositionForSlot(_ index: Int) -> CGPoint {
         guard index < seatPositions.count else {
             let lastSeat = seatPositions.last ?? CGPoint(x: seatX, y: 100)
@@ -658,7 +777,7 @@ class KitchenScene: SKScene {
             node.onTimerExpired = { [weak self, weak node] in
                 self?.handleCustomerLeft(node: node)
             }
-            node.startTimer(duration: customer.order.waitTime)
+            node.startTimer(duration: adjustedPatience(for: customer.order))
         }
 
         customerNodes.append(node)
@@ -848,8 +967,8 @@ class KitchenScene: SKScene {
             }
             // Tap active mixer target
             for node in tappedNodes {
-                if findMixerNode(in: node) && mixerNode.canReceiveIngredient {
-                    if mixerNode.currentIngredients.contains(picked.ingredient) {
+                if findMixerNode(in: node) && (mixerNode?.canReceiveIngredient ?? false) {
+                    if mixerNode?.currentIngredients.contains(picked.ingredient) == true {
                         cancelPickup()
                     } else {
                         placeIngredientInMixer(picked)
@@ -931,11 +1050,11 @@ class KitchenScene: SKScene {
         // 3. Tap mixer to mix or pour
         for node in tappedNodes {
             if findMixerNode(in: node) {
-                if mixerNode.canMix {
+                if mixerNode?.canMix == true {
                     startMixing()
                     return
                 }
-                if mixerNode.canPour {
+                if mixerNode?.canPour == true {
                     pourBatterToPan()
                     return
                 }
@@ -1135,27 +1254,27 @@ class KitchenScene: SKScene {
         ingredientNode.animatePickup()
 
         // Show drop targets — both mixer and pan
-        mixerNode.showDropTarget(active: mixerNode.canReceiveIngredient)
+        mixerNode?.showDropTarget(active: mixerNode?.canReceiveIngredient ?? false)
         stoveTop.showDropTarget(active: stoveTop.canReceiveIngredient)
     }
 
     private func cancelPickup() {
         pickedUpIngredient?.animateReturn()
         pickedUpIngredient = nil
-        mixerNode.hideDropTarget()
+        mixerNode?.hideDropTarget()
         stoveTop.hideDropTarget()
     }
 
     private func placeIngredientInMixer(_ ingredientNode: IngredientNode) {
         ingredientNode.animateReturn()
         pickedUpIngredient = nil
-        mixerNode.hideDropTarget()
+        mixerNode?.hideDropTarget()
         stoveTop.hideDropTarget()
 
-        mixerNode.addIngredient(ingredientNode.ingredient)
+        mixerNode?.addIngredient(ingredientNode.ingredient)
         showMixerBin()
 
-        if mixerNode.canMix {
+        if mixerNode?.canMix == true {
             pulseMixer()
         }
     }
@@ -1163,7 +1282,7 @@ class KitchenScene: SKScene {
     private func placeIngredientInPan(_ ingredientNode: IngredientNode) {
         ingredientNode.animateReturn()
         pickedUpIngredient = nil
-        mixerNode.hideDropTarget()
+        mixerNode?.hideDropTarget()
         stoveTop.hideDropTarget()
 
         stoveTop.addIngredientDirect(
@@ -1199,10 +1318,10 @@ class KitchenScene: SKScene {
 
     private func startMixing() {
         gamePhase = .mixing
-        mixerNode.removeAction(forKey: "readyPulse")
-        mixerNode.setScale(1.0)
+        mixerNode?.removeAction(forKey: "readyPulse")
+        mixerNode?.setScale(1.0)
 
-        mixerNode.startMixing { [weak self] in
+        mixerNode?.startMixing { [weak self] in
             self?.onMixingComplete()
         }
     }
@@ -1211,7 +1330,7 @@ class KitchenScene: SKScene {
         gamePhase = .batterReady
 
         // Pulse the mixer to indicate "tap me"
-        mixerNode.run(SKAction.repeatForever(SKAction.sequence([
+        mixerNode?.run(SKAction.repeatForever(SKAction.sequence([
             SKAction.scale(to: 1.08, duration: 0.4),
             SKAction.scale(to: 1.0, duration: 0.4)
         ])), withKey: "readyPulse")
@@ -1220,11 +1339,10 @@ class KitchenScene: SKScene {
     // MARK: - Pour batter to pan
 
     private func pourBatterToPan() {
-        mixerNode.removeAction(forKey: "readyPulse")
-        mixerNode.setScale(1.0)
+        mixerNode?.removeAction(forKey: "readyPulse")
+        mixerNode?.setScale(1.0)
 
-        let ingredients = mixerNode.pourBatter()
-        guard !ingredients.isEmpty else { return }
+        guard let ingredients = mixerNode?.pourBatter(), !ingredients.isEmpty else { return }
 
         // Batter goes to pan but doesn't auto-cook — player taps pan to start
         gamePhase = .addingIngredients
@@ -1331,10 +1449,10 @@ class KitchenScene: SKScene {
     // MARK: - Bin handling
 
     private func handleMixerBin() {
-        guard !mixerNode.isEmpty else { return }
-        mixerNode.removeAction(forKey: "readyPulse")
-        mixerNode.setScale(1.0)
-        mixerNode.reset()
+        guard mixerNode?.isEmpty == false else { return }
+        mixerNode?.removeAction(forKey: "readyPulse")
+        mixerNode?.setScale(1.0)
+        mixerNode?.reset()
         hideMixerBin()
 
         gamePhase = .addingIngredients
@@ -1345,7 +1463,7 @@ class KitchenScene: SKScene {
         stoveTop.removeAction(forKey: "readyPulse")
         stoveTop.setScale(1.0)
         stoveTop.reset()
-        mixerNode.reset()
+        mixerNode?.reset()
         hidePanBin()
         hideMixerBin()
 
@@ -1356,7 +1474,7 @@ class KitchenScene: SKScene {
 
     private func resetForNextOrder() {
         stoveTop.reset()
-        mixerNode.reset()
+        mixerNode?.reset()
         hideMixerBin()
         hidePanBin()
 
@@ -1773,8 +1891,13 @@ class KitchenScene: SKScene {
         overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
         container.addChild(overlay)
 
+        // New ingredients for this level
+        let newIngs = config.newIngredients
+        let hasNewIngs = !newIngs.isEmpty
+        let cardWidth: CGFloat = hasNewIngs ? 450 : 300
+
         // Card background
-        let card = SKShapeNode(rectOf: CGSize(width: 300, height: 360), cornerRadius: 24)
+        let card = SKShapeNode(rectOf: CGSize(width: cardWidth, height: 380), cornerRadius: 24)
         card.fillColor = UIColor(red: 0.95, green: 0.92, blue: 0.85, alpha: 0.98)
         card.strokeColor = UIColor(red: 0.85, green: 0.78, blue: 0.65, alpha: 1.0)
         card.lineWidth = 3
@@ -1787,20 +1910,24 @@ class KitchenScene: SKScene {
         title.fontName = "ChalkboardSE-Bold"
         title.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         title.verticalAlignmentMode = .center
-        title.position = CGPoint(x: 0, y: 130)
+        title.position = CGPoint(x: 0, y: 145)
         card.addChild(title)
 
+        // Content area — level frame + optional ingredient(s) side by side
+        let frameSize: CGFloat = 130
+        let contentY: CGFloat = 30
+        let frameX: CGFloat = hasNewIngs ? -80 : 0
+
         // Frozen level frame
-        let frameSize: CGFloat = 150
         let frozenFrame = SKSpriteNode(texture: SKTexture(imageNamed: "level_frame_frozen"))
         frozenFrame.size = CGSize(width: frameSize, height: frameSize)
-        frozenFrame.position = CGPoint(x: 0, y: 20)
+        frozenFrame.position = CGPoint(x: frameX, y: contentY)
         frozenFrame.name = "unfreezeFrame"
         card.addChild(frozenFrame)
 
         // Level number — icy blue
         let numLabel = SKLabelNode(text: "\(config.level)")
-        numLabel.fontSize = 52
+        numLabel.fontSize = 48
         numLabel.fontName = "ChalkboardSE-Bold"
         numLabel.fontColor = UIColor(red: 0.55, green: 0.7, blue: 0.85, alpha: 0.8)
         numLabel.verticalAlignmentMode = .center
@@ -1810,12 +1937,68 @@ class KitchenScene: SKScene {
         numLabel.name = "unfreezeNumber"
         frozenFrame.addChild(numLabel)
 
-        // Snowflake cost — prominent, below frame
+        // New ingredients — same size as level frame, evenly spaced
+        if hasNewIngs {
+            let frozenOverlayTex = SKTexture(imageNamed: "frozen_overlay")
+            let ingFrameSize = frameSize  // same size as level card
+            let plusGap: CGFloat = 40  // space for the + sign
+            let ingStartX = frameX + frameSize / 2 + plusGap + frameSize / 2 + 20
+
+            for (i, ingName) in newIngs.enumerated() {
+                let ix = ingStartX + CGFloat(i) * (ingFrameSize + plusGap)
+
+                // Ingredient image — same size as level frame
+                let ingSprite = SKSpriteNode(texture: SKTexture(imageNamed: ingName))
+                ingSprite.size = CGSize(width: ingFrameSize * 0.7, height: ingFrameSize * 0.7)
+                ingSprite.position = CGPoint(x: ix, y: contentY)
+                ingSprite.zPosition = 1
+                ingSprite.name = "unfreezeIng_\(ingName)"
+                card.addChild(ingSprite)
+
+                // Frozen overlay on top — same size as level frame
+                let iceOverlay = SKSpriteNode(texture: frozenOverlayTex)
+                iceOverlay.size = CGSize(width: ingFrameSize, height: ingFrameSize)
+                iceOverlay.position = CGPoint(x: ix, y: contentY)
+                iceOverlay.zPosition = 2
+                iceOverlay.name = "unfreezeIce_\(ingName)"
+                card.addChild(iceOverlay)
+
+                // Pulse animation — same as level frame
+                let ingPulse = SKAction.sequence([
+                    SKAction.scale(to: 1.05, duration: 0.5),
+                    SKAction.scale(to: 1.0, duration: 0.5)
+                ])
+                iceOverlay.run(SKAction.repeatForever(ingPulse))
+
+                // Ingredient name below
+                let nameLabel = SKLabelNode(text: ingName)
+                nameLabel.fontSize = 14
+                nameLabel.fontName = "ChalkboardSE-Bold"
+                nameLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
+                nameLabel.verticalAlignmentMode = .top
+                nameLabel.position = CGPoint(x: ix, y: contentY - ingFrameSize / 2 - 6)
+                nameLabel.zPosition = 1
+                card.addChild(nameLabel)
+            }
+
+            // "+" between frame and first ingredient — centred in the gap
+            let plusX = frameX + frameSize / 2 + plusGap / 2 + 10
+            let plusLabel = SKLabelNode(text: "+")
+            plusLabel.fontSize = 32
+            plusLabel.fontName = "AvenirNext-Bold"
+            plusLabel.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 0.5)
+            plusLabel.verticalAlignmentMode = .center
+            plusLabel.position = CGPoint(x: plusX, y: contentY)
+            card.addChild(plusLabel)
+        }
+
+        // Snowflake cost — total (level + ingredients)
         let cost = max(1, config.unlockCost)
 
         let snowIcon = SKSpriteNode(texture: SKTexture(imageNamed: "snowflake"))
         snowIcon.size = CGSize(width: 28, height: 28)
         snowIcon.position = CGPoint(x: -18, y: -80)
+        snowIcon.name = "unfreezeCostIcon"
         card.addChild(snowIcon)
 
         let costLabel = SKLabelNode(text: "-\(cost)")
@@ -1825,6 +2008,7 @@ class KitchenScene: SKScene {
         costLabel.verticalAlignmentMode = .center
         costLabel.horizontalAlignmentMode = .left
         costLabel.position = CGPoint(x: 4, y: -80)
+        costLabel.name = "unfreezeCostLabel"
         card.addChild(costLabel)
 
         // "Tap to unfreeze!" hint
@@ -1833,7 +2017,7 @@ class KitchenScene: SKScene {
         hint.fontName = "ChalkboardSE-Bold"
         hint.fontColor = UIColor(red: 0.4, green: 0.25, blue: 0.1, alpha: 1.0)
         hint.verticalAlignmentMode = .center
-        hint.position = CGPoint(x: 0, y: -120)
+        hint.position = CGPoint(x: 0, y: -130)
         hint.name = "unfreezeHint"
         card.addChild(hint)
 
@@ -1945,7 +2129,19 @@ class KitchenScene: SKScene {
                 ]))
             }
 
-            // Update hint
+            // Remove ice overlays from new ingredients
+            for ingName in config.newIngredients {
+                if let iceOverlay = findNode(named: "unfreezeIce_\(ingName)", in: container) {
+                    iceOverlay.run(SKAction.sequence([
+                        SKAction.fadeOut(withDuration: 0.3),
+                        SKAction.removeFromParent()
+                    ]))
+                }
+            }
+
+            // Hide cost and update hint
+            findNode(named: "unfreezeCostIcon", in: container)?.run(SKAction.fadeOut(withDuration: 0.3))
+            findNode(named: "unfreezeCostLabel", in: container)?.run(SKAction.fadeOut(withDuration: 0.3))
             if let hint = findNode(named: "unfreezeHint", in: container) as? SKLabelNode {
                 hint.text = "Tap to play!"
             }
@@ -2018,7 +2214,7 @@ class KitchenScene: SKScene {
     // MARK: - Station pulsing
 
     private func pulseMixer() {
-        mixerNode.run(SKAction.repeatForever(SKAction.sequence([
+        mixerNode?.run(SKAction.repeatForever(SKAction.sequence([
             SKAction.scale(to: 1.08, duration: 0.4),
             SKAction.scale(to: 1.0, duration: 0.4)
         ])), withKey: "readyPulse")

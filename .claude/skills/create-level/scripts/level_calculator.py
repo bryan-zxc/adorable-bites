@@ -28,6 +28,7 @@ class Recipe:
     has_mixing: bool
     cook_device: str    # pan, pot, wok, toaster
     introduced_at: int  # level number
+    cook_time: float    # sum of ingredient cook times (from cooking-times.md)
 
     @property
     def base_pay(self) -> int:
@@ -43,32 +44,31 @@ class Recipe:
         return 13 * self.ingredients + 3 * self.steps + (5 if self.has_mixing else 0) + 4
 
     @property
-    def cook_time(self) -> float:
-        return {"pan": 8, "pot": 12, "wok": 5, "toaster": 3}[self.cook_device]
-
-    @property
     def passive_time(self) -> float:
         """Passive time: mixer animation + cook + eat"""
         return (2 if self.has_mixing else 0) + self.cook_time + 6
 
 
+# Cook times from docs/cooking-times.md:
+# egg=8, bread=6, butter=2, potato=12, onion=8, tomato=6,
+# flour=4, milk=2, sugar=2, chicken=14, bacon=10
 RECIPES = [
-    Recipe("Fried Egg",          1, 0, False, "pan", 1),
-    Recipe("Pan Toast",          1, 0, False, "pan", 3),
-    Recipe("Buttered Egg",       2, 0, False, "pan", 7),
-    Recipe("Fried Potato",       1, 1, False, "pan", 11),
-    Recipe("Fried Onion Egg",    2, 1, False, "pan", 12),
-    Recipe("Boiled Potato",      1, 1, False, "pot", 13),
-    Recipe("Boiled Veges",       2, 2, False, "pot", 14),
-    Recipe("Scrambled Egg",      1, 1, True,  "pan", 17),
-    Recipe("Pancakes",           3, 1, True,  "pan", 18),
-    Recipe("Hash Brown",         1, 2, False, "pan", 20),
-    Recipe("Omelette",           3, 3, True,  "pan", 22),
-    Recipe("Potato Soup",        2, 2, False, "pot", 23),
-    Recipe("Bacon",              1, 0, False, "pan", 26),
-    Recipe("Bacon & Eggs",       2, 0, False, "pan", 27),
-    Recipe("Stir Fry Chicken",   2, 2, False, "wok", 28),
-    Recipe("Hash Brown Deluxe",  1, 2, False, "pan", 29),
+    Recipe("Fried Egg",          1, 0, False, "pan", 1,  8),       # egg
+    Recipe("Pan Toast",          1, 0, False, "pan", 3,  6),       # bread
+    Recipe("Buttered Egg",       2, 0, False, "pan", 7,  10),      # egg+butter
+    Recipe("Fried Potato",       1, 1, False, "pan", 11, 12),      # potato
+    Recipe("Fried Onion Egg",    2, 1, False, "pan", 12, 16),      # onion+egg
+    Recipe("Boiled Potato",      1, 1, False, "pot", 13, 12),      # potato
+    Recipe("Boiled Veges",       2, 2, False, "pot", 14, 18),      # tomato+potato
+    Recipe("Scrambled Egg",      1, 1, True,  "pan", 17, 8),       # egg
+    Recipe("Pancakes",           3, 1, True,  "pan", 18, 14),      # flour+egg+milk
+    Recipe("Hash Brown",         1, 2, False, "pan", 20, 12),      # potato
+    Recipe("Omelette",           3, 3, True,  "pan", 22, 22),      # egg+tomato+onion
+    Recipe("Potato Soup",        2, 2, False, "pot", 23, 20),      # potato+onion
+    Recipe("Bacon",              1, 0, False, "pan", 26, 10),      # bacon
+    Recipe("Bacon & Eggs",       2, 0, False, "pan", 27, 18),      # bacon+egg
+    Recipe("Stir Fry Chicken",   2, 2, False, "wok", 28, 22),      # chicken+onion
+    Recipe("Hash Brown Deluxe",  1, 2, False, "pan", 29, 12),      # potato
 ]
 
 RECIPE_BY_NAME = {r.name: r for r in RECIPES}
@@ -106,6 +106,153 @@ OVERHEAD_BY_CHAIRS = {1: 1.0, 2: 1.15, 3: 1.10, 4: 1.08, 5: 1.05}
 
 def overhead_factor(chairs: int) -> float:
     return OVERHEAD_BY_CHAIRS.get(chairs, 1.05)
+
+
+# ---------------------------------------------------------------------------
+# Achievability model
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Achievability:
+    """Analyses whether a level is achievable with given chairs and cooking devices."""
+    chairs: int
+    cooking_devices: int
+    avg_active_prep: float    # player active time per customer (quiz + prep + post-serve)
+    avg_cook_time: float      # time food occupies a cooking device
+    eat_clear_time: float     # time seat is blocked (eating + money + clear)
+    throughput_per_min: float  # customers servable per minute
+    max_customers_in_7min: int  # max customers in target duration
+    bottleneck: str           # what limits throughput: "prep", "cooking", or "chairs"
+
+    def __str__(self):
+        return (
+            f"  {self.chairs} chairs, {self.cooking_devices} devices: "
+            f"throughput={self.throughput_per_min:.1f}/min, "
+            f"max={self.max_customers_in_7min} in 7min, "
+            f"bottleneck={self.bottleneck}"
+        )
+
+
+def analyse_achievability(
+    recipe_pool: list[Recipe],
+    chairs: int,
+    cooking_devices: int,
+    post_active: float,
+    is_training: bool = False,
+) -> Achievability:
+    """Calculate throughput and bottleneck for a given setup.
+
+    The marginal time per customer = max of three bottlenecks:
+    1. Player active prep (quiz + pickup + steps + post-serve) — can only do one at a time
+    2. Cooking device time / num_devices — each device cooks one thing at a time
+    3. Eat + clear time / chairs — seats are occupied while eating
+
+    With overlap: while food cooks, player can prep the next order.
+    So effective marginal = max(active_prep, cook_time/devices, eat_clear/chairs)
+    """
+    if not recipe_pool:
+        return Achievability(chairs, cooking_devices, 0, 0, 0, 0, 0, "none")
+
+    # Average active prep per customer (quiz + pickup + steps + mixer overhead)
+    avg_active_base = sum(r.active_base for r in recipe_pool) / len(recipe_pool)
+    avg_active_prep = avg_active_base + post_active
+
+    # Average cooking time (sum of ingredient cook times)
+    avg_cook = sum(r.cook_time for r in recipe_pool) / len(recipe_pool)
+    if is_training:
+        avg_cook *= 0.5
+
+    # Eat + clear time (seat occupied)
+    eat_clear = 6.0 + post_active  # eating (6s) + money/clear/wash taps
+
+    # Three bottlenecks
+    prep_bottleneck = avg_active_prep
+    cook_bottleneck = avg_cook / max(1, cooking_devices)
+    chair_bottleneck = eat_clear / max(1, chairs)
+
+    marginal = max(prep_bottleneck, cook_bottleneck, chair_bottleneck)
+
+    if marginal == prep_bottleneck:
+        bottleneck = "prep"
+    elif marginal == cook_bottleneck:
+        bottleneck = "cooking"
+    else:
+        bottleneck = "chairs"
+
+    throughput = 60.0 / marginal if marginal > 0 else 0
+    max_in_7min = int(7 * 60 / marginal) if marginal > 0 else 0
+
+    return Achievability(
+        chairs=chairs,
+        cooking_devices=cooking_devices,
+        avg_active_prep=avg_active_prep,
+        avg_cook_time=avg_cook,
+        eat_clear_time=eat_clear,
+        throughput_per_min=throughput,
+        max_customers_in_7min=max_in_7min,
+        bottleneck=bottleneck,
+    )
+
+
+def find_minimum_setup(
+    recipe_pool: list[Recipe],
+    target_customers: int,
+    post_active: float,
+    is_training: bool = False,
+    max_chairs: int = 5,
+    max_devices: int = 3,
+) -> list[tuple[int, int, Achievability, bool]]:
+    """Find minimum chairs + cooking devices needed to serve target_customers in 7 min.
+    Returns (chairs, devices, achievability, is_ok) sorted by total equipment count."""
+    results: list[tuple[int, int, Achievability, bool]] = []
+    for c in range(1, max_chairs + 1):
+        for d in range(1, max_devices + 1):
+            a = analyse_achievability(recipe_pool, c, d, post_active, is_training)
+            ok = a.max_customers_in_7min >= target_customers
+            results.append((c, d, a, ok))
+
+    results.sort(key=lambda x: (not x[3], x[0] + x[1]))
+    return results
+
+
+import math
+
+def expected_concurrent(
+    chairs: int,
+    arrival_interval: float,
+    avg_service_time: float,
+) -> int:
+    """Calculate expected concurrent customers from Poisson arrival rate.
+
+    If customers arrive every `arrival_interval` seconds and each occupies
+    a seat for `avg_service_time` seconds, the expected concurrency is
+    how many customers overlap at peak.
+
+    Returns min(chairs, ceil(avg_service_time / arrival_interval)).
+    For sequential levels (arrival_interval=0), returns 1.
+    """
+    if arrival_interval <= 0:
+        return 1
+    return min(chairs, math.ceil(avg_service_time / arrival_interval))
+
+
+def calculate_patience(
+    base_wait: float,
+    chairs: int,
+    arrival_interval: float,
+    avg_service_time: float,
+) -> tuple[float, float]:
+    """Calculate customer patience and tip window based on expected concurrency.
+
+    patience = base_wait + (concurrent - 1) × base_wait × 0.2
+    tip_window = patience × 0.4 (first 40%)
+
+    Returns (patience, tip_window).
+    """
+    concurrent = expected_concurrent(chairs, arrival_interval, avg_service_time)
+    patience = base_wait + (concurrent - 1) * base_wait * 0.2
+    tip_window = patience * 0.4
+    return (patience, tip_window)
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +517,7 @@ def calculate_economy(
 CURRENT_LEVELS = [
     {"level": 1,  "chairs": 1, "plates": 3, "customers": 2,  "frozen": 0},
     {"level": 2,  "chairs": 1, "plates": 3, "customers": 4,  "frozen": 1},
-    {"level": 3,  "chairs": 1, "plates": 3, "customers": 4,  "frozen": 1},
+    {"level": 3,  "chairs": 1, "plates": 3, "customers": 3,  "frozen": 2},
     {"level": 4,  "chairs": 1, "plates": 3, "customers": 3,  "frozen": 1},
     {"level": 5,  "chairs": 1, "plates": 3, "customers": 3,  "frozen": 7},
     {"level": 6,  "chairs": 1, "plates": 2, "customers": 5,  "frozen": 1},
@@ -474,7 +621,7 @@ def run_economy_projection(profile_name: str = "average"):
             if ms["level"] == lvl:
                 cumul_money_spent += ms["cost"]
                 avail = cumul_money - cumul_money_spent
-                status = "OK" if avail >= 0 else f"NEED ${-avail}"
+                status = "OK" if avail >= 0 else f"SAVE ${-avail}"
                 notes.append(f"Buy {ms['item']} (${ms['cost']}) → ${avail} {status}")
 
         # Check snowflake purchases (tiers, ingredients) — bought AFTER playing
@@ -493,8 +640,18 @@ def run_economy_projection(profile_name: str = "average"):
               f"{econ.quiz_snowflakes:>4} | {econ.level_bonus:>5} | {econ.total_snowflakes:>5} | "
               f"{cumul_snow:>6} | {note_str}")
 
-    print(f"\n  Total money: ${cumul_money}  (spent ${cumul_money_spent}, surplus ${cumul_money - cumul_money_spent})")
-    print(f"  Total snowflakes: {cumul_snow}  (spent {cumul_snow_spent}, surplus {cumul_snow - cumul_snow_spent})")
+        # Band summary at every 10th level
+        if lvl % 10 == 0:
+            print(f"  {'─'*108}")
+            band_start = lvl - 9
+            print(f"  Band L{band_start}-{lvl}: money=${cumul_money} (spent ${cumul_money_spent}, "
+                  f"balance ${cumul_money - cumul_money_spent}) | "
+                  f"snow={cumul_snow} (spent {cumul_snow_spent}, "
+                  f"balance {cumul_snow - cumul_snow_spent})")
+            print(f"  {'─'*108}")
+
+    print(f"\n  Total money: ${cumul_money}  (spent ${cumul_money_spent}, balance ${cumul_money - cumul_money_spent})")
+    print(f"  Total snowflakes: {cumul_snow}  (spent {cumul_snow_spent}, balance {cumul_snow - cumul_snow_spent})")
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +690,36 @@ def analyse_level(level: int, chairs: int, plates: int, recipe_names: list[str] 
               f"${econ.money} earned, {econ.total_snowflakes}sf "
               f"(quiz={econ.quiz_snowflakes} + bonus={econ.level_bonus}, "
               f"missed={econ.missed:.1f})")
+    print()
 
+    # Achievability analysis
+    pool = [RECIPE_BY_NAME[n] for n in timing.recipes if n in RECIPE_BY_NAME]
+    post = post_active_time(level, has_dw)
+    is_train = level <= 10
+
+    print("  ACHIEVABILITY (bottleneck analysis)")
+    a = analyse_achievability(pool, chairs, 1, post, is_train)
+    print(f"    With {chairs} chairs, 1 cooking device:")
+    print(f"      Throughput: {a.throughput_per_min:.1f} customers/min")
+    print(f"      Max in 7min: {a.max_customers_in_7min}")
+    print(f"      Bottleneck: {a.bottleneck}")
+    print(f"      Avg cook time: {a.avg_cook_time:.1f}s")
+
+    # Concurrency + patience
+    avg_service = timing.avg_sequential
+    interval = timing.arrival_interval
+    conc = expected_concurrent(chairs, interval, avg_service)
+    if pool:
+        avg_base_wait = sum(
+            r.cook_time + 13 * r.ingredients + 3 * r.steps + (5 if r.has_mixing else 0)
+            for r in pool
+        ) / len(pool) * 1.5
+    else:
+        avg_base_wait = 30
+    patience, tip_window = calculate_patience(avg_base_wait, chairs, interval, avg_service)
+    print(f"\n    Concurrency: {conc} (chairs={chairs}, interval={interval:.0f}s, service={avg_service:.0f}s)")
+    print(f"    Patience: {patience:.0f}s (base {avg_base_wait:.0f}s × {1 + (conc-1)*0.2:.1f})")
+    print(f"    Tip window: {tip_window:.0f}s")
     print()
 
 

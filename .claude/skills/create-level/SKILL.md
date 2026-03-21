@@ -7,174 +7,161 @@ description: Design and balance new game levels for Adorable Bites. Use this ski
 
 Design new Adorable Bites levels with proper timing, customer counts, arrival rates, and economy balance. Every number is derived from the timing model — no guessing.
 
-Levels are designed **10 at a time** in a single `docs/levels-X-Y.md` file. Each file is self-contained: it has the narrative design, per-level config, AND the resource economy for that batch (how much money/snowflakes are earned and spent across those 10 levels). The economy section in each batch is responsible for **depleting the player's accumulated resources** by the end of those 10 levels.
+Levels are designed **10 at a time** in a single `docs/levels-X-Y.md` file. Each file is self-contained: narrative design, per-level config, AND the resource economy for that batch.
+
+## Core Economy Principles
+
+### 1. Each 10-level band is self-contained
+
+Each batch starts near zero and **depletes to near zero (or negative)** by the end. Bands operate relatively independently — no large surplus carries across batches.
+
+### 2. Tool pricing forces a saving period
+
+When a tool is introduced (made available for purchase), **the player's expected balance must be negative at that point**. They cannot afford it immediately — they must earn over the next few levels before buying.
+
+Once the player buys the tool, customers start ordering recipes that need it. The flow is:
+1. Tool becomes available → player can't afford it (negative balance)
+2. Player earns money over the next few levels
+3. Player buys the tool
+4. Subsequent levels introduce recipes that use the tool
+5. This creates the "I need this tool" → "I'm saving up" → "I bought it!" → "Now I can cook this!" satisfaction loop
+
+**Never** introduce a tool and immediately require it in the very next level. There must always be a gap for earning.
+
+Tools can open at any point in a band (beginning, middle, or end). The recommendation is towards the end of a band to set up the next batch, but this is flexible. The hard rule is the negative balance on introduction.
+
+**Exception**: The very first chair purchase (L1-10 training) can be immediately affordable — this is the player's first shop experience and should feel rewarding, not frustrating.
+
+### 2b. Multi-purchase items (chairs, pans, pots, induction tops, etc.)
+
+Items that can be bought multiple times follow a **backwards design** process:
+
+1. **Start with the goal**: "At level X, I want the player to NEED 2 pans to keep up"
+2. **Verify with the calculator**: Run achievability — confirm level X is impossible with 1 pan, achievable with 2
+3. **Place the purchase**: A few levels before X, count the 2nd pan purchase (balance goes negative)
+4. **Place the hint**: A level before the purchase point, the level-end screen hints: "To handle the next levels, you might want another pan!"
+5. **Price it**: Set the price so balance is negative at the purchase point
+
+You always design backwards from the difficulty target, not forwards from the tool availability.
+
+### 3. Negative balance at tool introduction is expected
+
+The plan should show a negative balance when a tool becomes available. This is a planning artefact only — in the game, the player simply can't purchase until they have enough. The negative value shows how many levels of earning are needed before the tool is affordable.
+
+### 4. Customers never exceed plates (before dishwashing)
+
+Until dishwashing is introduced, customers per level must never exceed plate count. After dishwashing, plates become a reusable resource.
+
+### 5. Snowflake earning model
+
+- Quiz snowflakes earned during gameplay (correct = +difficulty reward, wrong = -1)
+- Level-end bonus: 3sf (0 missed), 2sf (1 missed), 1sf (2+ missed)
+- Every level costs 1sf to unfreeze (special frozen levels cost more)
+- New ingredients cost snowflakes to unfreeze (shown in combined unfreeze popup with the level)
+- If net snowflakes for the level are negative, nothing counts — must retry
 
 ## Quick Reference
 
 Run the calculator from the repo root:
 
 ```bash
-# Analyse a specific level (uses existing config for L1-30, computes optimal for L31+)
-python3 .claude/skills/create-level/scripts/level_calculator.py 31 --chairs 5 --plates 3
-
-# Override customer count to test a specific number
-python3 .claude/skills/create-level/scripts/level_calculator.py 15 --customers 10
-
-# Analyse with specific recipes
-python3 .claude/skills/create-level/scripts/level_calculator.py 31 --chairs 5 --recipes "Fried Egg,Pancakes,Omelette"
-
-# Show timing for all 30 current levels
-python3 .claude/skills/create-level/scripts/level_calculator.py --all
-
-# Full economy projection (money + snowflakes for all profiles)
-python3 .claude/skills/create-level/scripts/level_calculator.py --economy
+python3 .claude/skills/create-level/scripts/level_calculator.py --economy       # Full economy projection
+python3 .claude/skills/create-level/scripts/level_calculator.py --all           # Timing for all levels
+python3 .claude/skills/create-level/scripts/level_calculator.py 31 --chairs 5   # Analyse specific level
 ```
 
 ## Workflow
 
-### 1. Gather context
+### 1. Read the previous band
 
-Read the previous batch's level doc to understand what the player has at this point:
-- What tools, ingredients, and recipes do they have?
-- How much money and snowflakes have they accumulated?
-- What's the cumulative spend so far?
+Read the previous batch's `docs/levels-X-Y.md` to find:
+- **Ending balance** (money and snowflakes — expected to be negative or near zero)
+- **Tools made available** that the player couldn't yet afford (need purchasing in THIS band)
+- **Ingredients unfrozen** so far
+- **Recipes available** so far
 
-Also read:
-- `docs/resource-economy.md` — master economy formulas, recipe payouts, player profiles
-- `AdorableBites/Models/LevelConfig.swift` — level config structure
+The starting balance for the new band = the previous band's ending balance (in-game this clamps to 0 since you can't spend what you don't have, but the plan tracks the deficit).
 
-### 2. Discuss with the user
+### 2. Design the 10 levels
 
-Design 10 levels as a batch. For each level, align on:
+For each level, align on:
 - **What's new?** New recipe, new tool, new mechanic, or practice/pressure level?
 - **What's the feel?** Relaxed practice, moderate challenge, or intense pressure test?
-- **Is this level frozen?** Tool levels need both snowflakes (to unfreeze) and money (to buy the tool). Milestone levels just need snowflakes.
-- **New ingredients?** Each ingredient costs snowflakes to unfreeze individually.
+- **Is this level frozen?** All levels cost 1sf+. Tool levels also need money for the tool.
+- **New ingredients?** Each costs snowflakes to unfreeze.
 
-### 3. Run the calculator for each level
+Ensure:
+- Tools that were opened in the previous band get purchased early in this band (after 2-3 levels of earning)
+- Any new tools opened in this band create a negative balance at introduction
+- Recipes requiring a tool only appear AFTER the player can afford and buy the tool
+- Each band roughly depletes resources by the end
 
-```bash
-python3 .claude/skills/create-level/scripts/level_calculator.py <level> --chairs <N> --plates <N> --recipes "Recipe1,Recipe2,..."
-```
-
-The calculator outputs:
-- **Timing**: active/passive/sequential times, marginal time with parallelism, Poisson arrival interval, estimated duration for a strong player
-- **Economy**: money and snowflakes earned per profile (average, slow, strong)
-
-### 4. Check economy balance across the batch
-
-The 10-level batch should **deplete most of the resources earned within it**. Run the economy check:
-
-1. Start with the cumulative totals from the previous batch
-2. For each level in this batch, add earnings and subtract any spending
-3. By the end of the batch, the average player should have spent most of what they earned — leaving a small surplus (0-20% buffer)
-4. There should be 0-1 replay points within each batch of 10
-
-For tool levels (double-gated): the player needs BOTH enough snowflakes to unfreeze AND enough money to buy the tool. Check both currencies.
-
-### 5. Write the level doc
-
-Create `docs/levels-X-Y.md` with this structure:
-
-#### Narrative section (per level)
-
-```markdown
-## Level N — Title
-- Description of what's new, what the player learns
-- New recipe: **Recipe Name** (ingredients → steps → device)
-- Why this level exists in the progression
-```
-
-#### Level Config Table
-
-Every level doc must include a complete config table with ALL parameters needed to implement the level:
-
-| Level | Chairs | Plates | Customers | Arrival | Recipes | Frozen | Duration | New |
-|-------|--------|--------|-----------|---------|---------|--------|----------|----|
-| 11 | 2 | 3 | 10 | 35s | FE, PT, BE, FrPo | 8❄ | 5.9 min | Fried Potato, Knife |
-| 12 | 2 | 3 | 9 | 35s | + FrOE | — | 5.7 min | Fried Onion Egg |
-| ... | | | | | | | | |
-
-Columns:
-- **Chairs**: number of seats
-- **Plates**: plate count (limited resource)
-- **Customers**: total customers to serve
-- **Arrival**: Poisson mean interval in seconds, or "seq" for sequential (1-chair training levels)
-- **Recipes**: available recipe pool (cumulative)
-- **Frozen**: snowflake cost to unfreeze, or "—"
-- **Duration**: estimated time for strong player (from calculator)
-- **New**: what's introduced at this level (recipe, tool, mechanic)
-
-#### Feature flags (if applicable)
-
-For training levels (L1-10), list which automation is on/off:
-
-| Level | autoCollectMoney | autoClearTable | canOvercook | hasCustomerTimer |
-|-------|------------------|----------------|-------------|-----------------|
-| 1 | true | true | false | false |
-| 2 | true | true | false | true |
-| ... | | | | |
-
-#### Economy section
-
-Each 10-level batch includes its own economy section showing:
-
-1. **Earnings per level** (money + snowflakes for average player)
-2. **Spending milestones** within this batch (tools, chairs, frozen levels, ingredients)
-3. **Cashflow trace** — running balance showing where the squeeze points are
-4. **Batch totals** — money earned vs spent, snowflakes earned vs spent
-5. **Carry-forward** — what the player takes into the next batch
-
-### 6. Update LevelConfig.swift
-
-Add each level to `AdorableBites/Models/LevelConfig.swift`:
-
-```swift
-LevelConfig(
-    level: N, name: "", recipeNames: ["Recipe1", "Recipe2"],
-    chairCount: C, customerCount: N, plateCount: P, unlockCost: 0,
-    autoCollectMoney: false, autoClearTable: false,
-    canOvercook: true, hasCustomerTimer: true
-),
-```
-
-Feature flags for L11+: all manual (`autoCollectMoney: false, autoClearTable: false, canOvercook: true, hasCustomerTimer: true`).
-
-### 7. Update the calculator
-
-If the batch introduces new recipes, add them to `RECIPES` in `scripts/level_calculator.py`:
-
-```python
-Recipe("Recipe Name", ingredients=N, steps=N, has_mixing=bool, cook_device="pan", introduced_at=level),
-```
-
-Also add the new levels to `CURRENT_LEVELS` and any new spending to `MONEY_SPENDING` / `SNOWFLAKE_SPENDING`.
-
-### 8. Verify
-
-Run the full economy projection to verify everything balances:
+### 3. Run the calculator
 
 ```bash
 python3 .claude/skills/create-level/scripts/level_calculator.py --economy
 ```
 
-## Timing Model
+Check:
+- **Negative balance when tools are introduced** (confirms player can't buy immediately)
+- **Balance recovers** over the next few levels (player earns enough to buy)
+- **Band ends near zero or negative** (resources depleted, possibly new tool opened)
+- **No NEED flags for level unfreezes** (player can always afford to play the next level)
 
-The calculator encodes the full timing model. Summary for quick reference:
+### 4. Write the level doc
+
+Create `docs/levels-X-Y.md` with these sections:
+
+#### Level Narratives
+Per-level descriptions with goals, new mechanics, recipes.
+
+#### Level Config Table
+| Level | Chairs | Plates | Customers | Arrival | Recipes | Frozen | Duration | New |
+|-------|--------|--------|-----------|---------|---------|--------|----------|----|
+
+#### Feature Flags (if training levels)
+
+#### Tutorial Messages (if applicable)
+
+#### Economy Section
+Must include:
+1. **Starting balance** (from previous band's ending balance)
+2. **Earnings per level** (money + snowflakes for average player)
+3. **Spending milestones** (tools, ingredients, unfreezes) — note which create negative balance
+4. **Cashflow trace** with running balance — negative values are expected at tool introductions
+5. **Ending balance** (expected near zero or negative)
+6. **Tools/ingredients opened** at the end of this band (setup for next band)
+
+### 5. Update LevelConfig.swift
+
+Add levels to `AdorableBites/Models/LevelConfig.swift`. Include `newIngredients` for any level that introduces ingredients.
+
+### 6. Update the calculator
+
+Add new recipes to `RECIPES`, new levels to `CURRENT_LEVELS`, new spending to `MONEY_SPENDING` / `SNOWFLAKE_PURCHASES`.
+
+### 7. Verify
+
+Run `--economy` to verify:
+- Tool introductions create negative balance
+- Balance recovers within a few levels
+- Band ends near zero or negative
+- Snowflakes deplete similarly
+- No level unfreeze is unaffordable (player can always play the next level)
+
+## Timing Model
 
 **Active time per customer** = quiz+pickup (13s/ingredient) + steps (3s/step) + mixer overhead (5s if mixing) + device handling (4s) + post-serve taps (varies by level automation)
 
-**Passive time** = mixer animation (2s if mixing) + cook time (pan 8s, pot 12s, wok 5s, toaster 3s) + eating (6s)
+**Passive time** = mixer animation (2s if mixing) + cook time (sum of ingredient cook times, halved for L1-10 training) + eating (6s)
 
-**Parallelism**: with multiple chairs, passive time overlaps with the next customer's active time. Overhead factors: 2 chairs = 1.15, 3 = 1.10, 4 = 1.08, 5 = 1.05.
+**Parallelism overhead**: 2 chairs = 1.15, 3 = 1.10, 4 = 1.08, 5 = 1.05
 
-**Strong player duration**: sequential_time + (customers - 1) x marginal_time. Target 5-7.5 min for post-training levels.
+**Duration target**: 5-7.5 min for post-training levels.
 
-## Economy Rules
+## Economy Formulas
 
-- **Money formula**: base_pay = ingredients + steps. Tip = +$1.
-- **Snowflakes**: 1 quiz per ingredient pickup. Reward scales with difficulty (+1/+2/+3). Wrong answers cost -1. Missed customers cost -1.
-- **Tool levels are double-gated**: need snowflakes to unfreeze the level AND money to buy the tool.
-- **Average player target**: ~2 replays across the full game (0-1 per batch of 10). If a batch creates 2+ replay points, prices need adjusting.
-- **Player profiles**: strong (0 miss, 90% acc), average (0.5 miss, 80% acc), slow (2 miss, 70% acc).
-- **Resource depletion**: each 10-level batch should spend most of what it earns. The player shouldn't accumulate a large surplus across batches.
+- **Money**: base_pay = ingredients + steps. Tip = +$1.
+- **Snowflakes**: quiz reward scales with difficulty (+1/+2/+3). Wrong = -1. Level-end bonus = 3/2/1 based on missed customers. Every level costs 1sf+ to unfreeze.
+- **Cooking time**: sum of each ingredient's cook time. L1-10 at half speed. Wok at 60%.
+- **Player profiles**: strong (0 miss, 90% acc, +3), average (0.5 miss, 80% acc, +2), slow (2 miss, 70% acc, +1).

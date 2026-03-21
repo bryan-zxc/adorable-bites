@@ -27,7 +27,7 @@ These are the foundational training levels. Every core game mechanic is introduc
 - **Goal:** Learn that customers won't wait forever. Still relaxed.
 
 ### Level 3 -- Don't Burn It!
-- **Chairs:** 1 | **Plates:** 3 | **Customers:** 4
+- **Chairs:** 1 | **Plates:** 3 | **Customers:** 3
 - **Tutorial:** "Careful -- food can burn! Grab it from the pan quickly once it's cooked!"
 - **New mechanic:** Overcooking / burn timer introduced (generous grace period)
 - **New recipe:** Pan Toast (bread -> pan)
@@ -95,7 +95,7 @@ These are the foundational training levels. Every core game mechanic is introduc
 |-------|--------|--------|-----------|---------|----------|---------|-------------|----------|----------|-----------------------|
 | 1 | 1 | 3 | 2 | seq | 33.0s | Fried Egg | -- | ~1.1 min | Welcome + basics | Quiz pickup, pan cook, serve |
 | 2 | 1 | 3 | 4 | seq | 33.0s | Fried Egg | 1 sf | ~2.2 min | Customer timer warning | Customer waiting timer |
-| 3 | 1 | 3 | 4 | seq | 33.0s | Fried Egg, Pan Toast | 1 sf | ~2.2 min | Burn warning | Overcooking / burn timer; Pan Toast |
+| 3 | 1 | 3 | 3 | seq | 33.0s | Fried Egg, Pan Toast | 2 sf | ~1.7 min | Burn warning | Overcooking / burn timer; Pan Toast |
 | 4 | 1 | 3 | 3 | seq | 35.0s | Fried Egg, Pan Toast | 1 sf | ~1.8 min | Money collection | Money collection; quiz difficulty |
 | 5 | 1 | 3 | 3 | seq | 37.0s | Fried Egg, Pan Toast | 7 sf | ~1.9 min | Table clearing | Table clearing (all manual) |
 | 6 | 1 | 2 | 5 | seq | 40.0s | Fried Egg, Pan Toast | 1 sf | ~3.3 min | Plate limit + washing | Dishwashing (plate limit) |
